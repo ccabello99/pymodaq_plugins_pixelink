@@ -59,7 +59,7 @@ Extensions
 
 Installation instructions
 =========================
-
 * Tested on PyMoDAQ version 5.0.2
 * Tested on Windows 11
+* Must install imagingcontrol4 in your Python environment
 * Must install legacy "Device Driver for USB Cameras" from https://www.theimagingsource.com/en-us/support/download/ before running
