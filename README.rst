@@ -1,4 +1,4 @@
-pymodaq_plugins_template
+pymodaq_plugins_imagingsource
 ########################
 
 .. the following must be adapted to your developed package, links to pypi, github  description...
