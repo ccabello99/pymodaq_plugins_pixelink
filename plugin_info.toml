@@ -1,7 +1,7 @@
 ## To modify by developer(s) of the plugin
 
 [plugin-info]
-SHORT_PLUGIN_NAME = 'bnc'
+SHORT_PLUGIN_NAME = 'imagingsource'
 
 package-url = 'https://github.com/ccabello99/pymodaq_plugins_imagingsource' #to modify
 description = 'PyMoDAQ plugin for interfacing with Imaging Source cameras.'
