@@ -46,7 +46,7 @@ Viewer1D
 Viewer2D
 ++++++++
 
-* **DMK**: control of DMK 42BUC03 2D detector
+* **DMK**: control of DMK 42BUC03/33GR0134 2D detector
 
 
 PID Models
@@ -62,4 +62,4 @@ Installation instructions
 * Tested on PyMoDAQ version 5.0.2
 * Tested on Windows 11
 * Must install imagingcontrol4 in your Python environment
-* Must install legacy "Device Driver for USB Cameras" from https://www.theimagingsource.com/en-us/support/download/ before running
+* Must install legacy "Device Driver for USB Cameras" &  "Device Driver for GigE Cameras" from https://www.theimagingsource.com/en-us/support/download/ before running
