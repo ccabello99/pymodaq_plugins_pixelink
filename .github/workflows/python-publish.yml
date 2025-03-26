@@ -30,7 +30,7 @@ jobs:
         git fetch --depth=1 origin +refs/tags/*:refs/tags/*
         hatch version
     - name: Build
-      run: hatch build ignore::RuntimeWarning -m unittest discover
+      run: hatch build
     - name: Check the build
       run: twine check dist/*
     - name: publish
