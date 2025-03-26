@@ -5,7 +5,7 @@ from pymodaq.utils.data import DataFromPlugins, Axis, DataToExport
 from pymodaq.control_modules.viewer_utility_classes import DAQ_Viewer_base, comon_parameters, main
 from pymodaq.utils.parameter import Parameter
 from PyQt5.QtCore import pyqtSignal
-import icImagingControl as ic4
+import imagingcontrol4 as ic4
 
 from qtpy import QtWidgets, QtCore
 
@@ -25,7 +25,7 @@ class DAQ_2DViewer_DMK(DAQ_Viewer_base):
 
     
     * Tested with DMK 42BUC03 camera.
-    * PyMoDAQ version 5.0.1
+    * PyMoDAQ version 5.0.2
     * Tested on Windows 11
     * Installation instructions: For this camera, you need to install the Imaging Source drivers, 
                                  specifically "Device Driver for USB Cameras" in legacy software
@@ -40,24 +40,23 @@ class DAQ_2DViewer_DMK(DAQ_Viewer_base):
     # TODO add your particular attributes here if any
 
     """
-    params = params = comon_parameters + [
-        {'title': 'Camera Model:', 'name': 'camera_name', 'type': 'str', 'value': '', 'readonly': True},
-        {'title': 'Image Width', 'name': 'width', 'type': 'int', 'value': 1280, 'default': 1280, 'min': 96, 'max': 1280},
-        {'title': 'Image Height', 'name': 'height', 'type': 'int', 'value': 960, 'default': 960, 'min': 96, 'max': 960},
+    params = comon_parameters + [
+        {'title': 'Camera Index:', 'name': 'camera_index', 'type': 'list', 'value': 0, 'default': 0, 'limits': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]},
+        {'title': 'Camera Model:', 'name': 'camera_model', 'type': 'str', 'value': '', 'readonly': True},
+        {'title': 'Image Width', 'name': 'width', 'type': 'int', 'value': 1280, 'default': 1280, 'limits': [96, 1280]},
+        {'title': 'Image Height', 'name': 'height', 'type': 'int', 'value': 960, 'default': 960, 'limits': [96, 960]},
         {'title': 'Exposure', 'name': 'exposure', 'type': 'group', 'children': [
-            {'title': 'Auto Exposure', 'name': 'exposure_auto', 'type': 'list', 'value': "Off", 'limits': ['On', 'Off']},
-            {'title': 'Exposure Time (ms)', 'name': 'exposure_time', 'type': 'float', 'value': 100.0, 'default': 100.0, 'min': 100.0, 'max': 30000000.0}
+            {'title': 'Auto Exposure', 'name': 'exposure_auto', 'type': 'list', 'value': "Off", 'default': "Off", 'limits': ['On', 'Off']},
+            {'title': 'Exposure Time (ms)', 'name': 'exposure_time', 'type': 'float', 'value': 100.0, 'default': 100.0, 'limits': [100.0, 30000000.0]}
         ]},
         {'title': 'Gain', 'name': 'gain', 'type': 'group', 'children': [
-            {'title': 'Auto Gain', 'name': 'gain_auto', 'type': 'list', 'value': "Off", 'limits': ['On', 'Off']},
-            {'title': 'Value', 'name': 'gain_value', 'type': 'float', 'value': 34, 'default': 34, 'min': 34, 'max': 255}
+            {'title': 'Auto Gain', 'name': 'gain_auto', 'type': 'list', 'value': "Off", 'default': "Off", 'limits': ['On', 'Off']},
+            {'title': 'Value', 'name': 'gain_value', 'type': 'float', 'value': 34.0, 'default': 34.0, 'limits': [34.0, 255.0]}
         ]},
-        {'title': 'Frame Rate', 'name': 'frame_rate', 'type': 'float', 'value': 25, 'default': 25, 'min': 7.5, 'max': 25},
-        {'title': 'Gamma', 'name': 'gamma', 'type': 'float', 'value': 1, 'default': 1, 'min': 1, 'max': 500}
+        {'title': 'Frame Rate', 'name': 'frame_rate', 'type': 'float', 'value': 25.0, 'default': 25.0, 'limits': [7.5, 25.0]},
+        {'title': 'Gamma', 'name': 'gamma', 'type': 'float', 'value': 1.0, 'default': 1.0, 'limits': [1.0, 500.0]}
         
     ]
-
-    callback_signal = pyqtSignal()
 
     def ini_attributes(self):
         """Initialize attributes"""
@@ -65,16 +64,11 @@ class DAQ_2DViewer_DMK(DAQ_Viewer_base):
         self.controller: ic4.Grabber = None
         self.device_info = None
         self.map = None
+        self.gui_data = None
         self.listener = None
-        self.sink = None
-
-        self.x_axis = None
-        self.y_axis = None
+        self.sink: ic4.QueueSink = None
 
         self.data_shape = 'Data2D'
-        self.callback_thread = None
-        self.last_read_frame = None
-        self.last_wait_frame = None
 
     def commit_settings(self, param: Parameter):
         """Apply the consequences of a change of value in the detector settings
@@ -84,25 +78,71 @@ class DAQ_2DViewer_DMK(DAQ_Viewer_base):
         param: Parameter
             A given parameter (within detector_settings) whose value has been changed by the user
         """
-        if param.name() == "width":
-            self.controller.device_property_map.set_value(ic4.PropId.WIDTH, param.value)
+        if param.name() == "camera_index":
+            self.close()
+            time.sleep(2)
+            self.ini_detector(controller=self.controller, device_idx=param.value())
+        elif param.name() == "width":
+            try:
+                self.controller.device_property_map.set_value(ic4.PropId.WIDTH, param.value())
+                print(self.controller.device_property_map.get_value_int(ic4.PropId.WIDTH))
+            except ic4.IC4Exception:
+                pass
         elif param.name() == "height":
-            self.controller.device_property_map.set_value(ic4.PropId.HEIGHT, param.value)
-        elif param.name() == "auto_exposure":
-            self.controller.device_property_map.set_value('Exposure_Auto', param.value)
+            try:
+                self.controller.device_property_map.set_value(ic4.PropId.HEIGHT, param.value())
+                print(self.controller.device_property_map.get_value_int(ic4.PropId.HEIGHT))
+            except ic4.IC4Exception:
+                pass
+        elif param.name() == "exposure_auto":
+            try:
+                self.controller.device_property_map.set_value('Exposure_Auto', param.value())
+                print(self.controller.device_property_map.get_value_bool('Exposure_Auto'))
+            except ic4.IC4Exception:
+                pass
+            try:
+                self.controller.device_property_map.set_value('ExposureAuto', param.value())
+                print(self.controller.device_property_map.get_value_bool('ExposureAuto'))
+            except ic4.IC4Exception:
+                pass
         elif param.name() == "exposure_time":
-            self.controller.device_property_map.set_value(ic4.PropId.EXPOSURE_TIME, param.value)
-        elif param.name() == "auto_gain":
-            self.controller.device_property_map.set_value('Gain_Auto', param.value)
-        elif param.name() == "gain":
-            self.controller.device_property_map.set_value(ic4.PropId.GAIN, param.value)
+            try:
+                self.controller.device_property_map.set_value(ic4.PropId.EXPOSURE_TIME, param.value())
+                print(self.controller.device_property_map.get_value_float(ic4.PropId.EXPOSURE_TIME))
+            except ic4.IC4Exception:
+                pass
+        elif param.name() == "gain_auto":
+            try:
+                self.controller.device_property_map.set_value('Gain_Auto', param.value())
+                print(self.controller.device_property_map.get_value_bool('Gain_Auto'))
+            except ic4.IC4Exception:
+                pass
+            try:
+                self.controller.device_property_map.set_value('GainAuto', param.value())
+                print(self.controller.device_property_map.get_value_bool('GainAuto'))
+            except ic4.IC4Exception:
+                pass
+        elif param.name() == "gain_value":
+            try:
+                self.controller.device_property_map.set_value(ic4.PropId.GAIN, param.value())
+                print(self.controller.device_property_map.get_value_float(ic4.PropId.GAIN))
+            except ic4.IC4Exception:
+                pass
         elif param.name() == "frame_rate":
-            self.controller.device_property_map.set_value(ic4.PropId.ACQUISITION_FRAME_RATE, param.value)
+            try:
+                self.controller.device_property_map.set_value(ic4.PropId.ACQUISITION_FRAME_RATE, param.value())
+                print(self.controller.device_property_map.get_value_float(ic4.PropId.ACQUISITION_FRAME_RATE))
+            except ic4.IC4Exception:
+                pass
         elif param.name() == "gamma":
-            self.controller.device_property_map.set_value(ic4.PropId.GAMMA, param.value)
+            try:
+                self.controller.device_property_map.set_value(ic4.PropId.GAMMA, param.value())
+                print(self.controller.device_property_map.get_value_float(ic4.PropId.GAMMA))
+            except ic4.IC4Exception:
+                pass
 
 
-    def ini_detector(self, controller=None):
+    def ini_detector(self, controller=None, device_idx=0):
         """Detector communication initialization
 
         Parameters
@@ -123,37 +163,83 @@ class DAQ_2DViewer_DMK(DAQ_Viewer_base):
         self.ini_detector_init(old_controller=controller,
                                new_controller=ic4.Grabber())
         
-        self.device_info = ic4.DeviceEnum.devices()[0]
+        # Get number of available cameras and list them in the camera_index parameter
+        self.settings.param('camera_index').setLimits([0, len(ic4.DeviceEnum.devices())-1])
+        
+        # Get the device info of chosen camera index and open the device
+        self.device_info = ic4.DeviceEnum.devices()[device_idx]
         self.controller.device_open(self.device_info)
-        self.settings.param('camera_name').setValue(self.device_info.model_name)
+
+        # Get device properties and set pixel format to Mono8
         self.map = self.controller.device_property_map
         self.controller.device_property_map.try_set_value(ic4.PropId.PIXEL_FORMAT, ic4.PixelFormat.Mono8)
 
-        self.settings.param('width').setValue(self.map.get_value_int(ic4.PropId.WIDTH))
-        self.settings.param('height').setValue(self.map.get_value_int(ic4.PropId.HEIGHT))
-        self.settings.child('exposure', 'exposure_auto').setValue(self.map.get_value_bool('Exposure_Auto'))
-        self.settings.child('exposure', 'exposure_time').setValue(self.map.get_value_float(ic4.PropId.EXPOSURE_TIME))
-        self.settings.child('gain', 'gain_auto').setValue(self.map.get_value_bool('Gain_Auto'))
-        self.settings.child('gain', 'gain_value').setValue(self.map.get_value_float(ic4.PropId.GAIN))
-        self.settings.param('frame_rate').setValue(self.map.get_value_float(ic4.PropId.ACQUISITION_FRAME_RATE))
-        self.settings.param('gamma').setValue(self.map.get_value_float(ic4.PropId.GAMMA))
+        # Set param values for configuration based on camera in use
+        self.settings.param('camera_model').setValue(self.device_info.model_name)
 
-        self.x_axis = Axis(data=np.linspace(1, self.map[ic4.PropId.WIDTH].maximum, self.map.get_value_int(ic4.PropId.WIDTH)))
-        self.y_axis = Axis(data=np.linspace(1, self.map[ic4.PropId.HEIGHT].maximum, self.map.get_value_int(ic4.PropId.HEIGHT)))
+        try:
+            self.settings.param('width').setValue(self.map.get_value_int(ic4.PropId.WIDTH))
+            self.settings.param('width').setDefault(self.map.get_value_int(ic4.PropId.WIDTH))
+            self.settings.param('width').setLimits([self.map[ic4.PropId.WIDTH].minimum, self.map[ic4.PropId.WIDTH].maximum])
+        except ic4.IC4Exception:
+            pass
+        try:
+            self.settings.param('height').setValue(self.map.get_value_int(ic4.PropId.HEIGHT))
+            self.settings.param('height').setDefault(self.map.get_value_int(ic4.PropId.HEIGHT))
+            self.settings.param('width').setLimits([self.map[ic4.PropId.HEIGHT].minimum, self.map[ic4.PropId.HEIGHT].maximum])
+        except ic4.IC4Exception:
+            pass
+        try:
+            self.settings.child('exposure', 'exposure_auto').setValue(self.map.get_value_bool('Exposure_Auto'))
+        except ic4.IC4Exception:
+            pass
+        try:
+            self.settings.child('exposure', 'exposure_auto').setValue(self.map.get_value_bool('ExposureAuto'))
+        except ic4.IC4Exception:
+            pass
+        try:
+            self.settings.child('exposure', 'exposure_time').setValue(self.map.get_value_float(ic4.PropId.EXPOSURE_TIME))
+            self.settings.child('exposure', 'exposure_time').setDefault(self.map.get_value_float(ic4.PropId.EXPOSURE_TIME))
+            self.settings.param('width').setLimits([self.map[ic4.PropId.EXPOSURE_TIME].minimum, self.map[ic4.PropId.EXPOSURE_TIME].maximum])
+        except ic4.IC4Exception:
+            pass
+        try:
+            self.settings.child('gain', 'gain_auto').setValue(self.map.get_value_bool('Gain_Auto'))
+        except ic4.IC4Exception:
+            pass
+        try:
+            self.settings.child('gain', 'gain_auto').setValue(self.map.get_value_bool('GainAuto'))
+        except ic4.IC4Exception:
+            pass
+        try:
+            self.settings.child('gain', 'gain_value').setValue(self.map.get_value_float(ic4.PropId.GAIN))
+            self.settings.child('gain', 'gain_value').setDefault(self.map.get_value_float(ic4.PropId.GAIN))
+            self.settings.param('width').setLimits([self.map[ic4.PropId.GAIN].minimum, self.map[ic4.PropId.GAIN].maximum])
+        except ic4.IC4Exception:
+            pass
+        try:
+            self.settings.param('frame_rate').setValue(self.map.get_value_float(ic4.PropId.ACQUISITION_FRAME_RATE))
+            self.settings.param('frame_rate').setDefault(self.map.get_value_float(ic4.PropId.ACQUISITION_FRAME_RATE))
+            self.settings.param('width').setLimits([self.map[ic4.PropId.ACQUISITION_FRAME_RATE].minimum, self.map[ic4.PropId.ACQUISITION_FRAME_RATE].maximum])
+        except ic4.IC4Exception:
+            pass
+        try:
+            self.settings.param('gamma').setValue(self.map.get_value_float(ic4.PropId.GAMMA))
+            self.settings.param('gamma').setDefault(self.map.get_value_float(ic4.PropId.GAMMA))
+            self.settings.param('width').setLimits([self.map[ic4.PropId.GAMMA].minimum, self.map[ic4.PropId.GAMMA].maximum])
+        except ic4.IC4Exception:
+            pass
+        
+        # Stream setup for data acquisition
+        self.gui_data = {"ready": False, "image": np.zeros(1)}
+        self.listener = Listener(self.gui_data)
+        self.sink = ic4.QueueSink(self.listener, max_output_buffers=1)
+        self.controller.stream_setup(self.sink)
+        self.sink.alloc_and_queue_buffers(10)
 
-        # Way to define a wait function with arguments
-        #wait_func = lambda: self.wait_for_frame(since='lastread', timeout=20.0)
-        #callback = ImagingSourceCallback(wait_func)
-
-        #self.callback_thread = QtCore.QThread()  # creation of a Qt5 thread
-        #callback.moveToThread(self.callback_thread)  # callback object will live within this thread
-        #callback.data_sig.connect(self.emit_data)  # when the wait for acquisition returns (with data taken), emit_data will be fired
-        #self.callback_signal.connect(callback.wait_for_acquisition)
-        #self.callback_thread.callback = callback
-        #self.callback_thread.start()
 
         info = "Imaging Source camera initialized"
-        print("Imaging Source camera initialized successfully")
+        print(f"{self.device_info.model_name} camera initialized successfully")
         initialized = True
         return info, initialized
 
@@ -162,11 +248,11 @@ class DAQ_2DViewer_DMK(DAQ_Viewer_base):
         if self.controller.is_streaming:
             self.controller.stream_stop()
         self.controller.device_close()
-        ic4.Library.exit()
         self.controller = None  # Garbage collect the controller
         self.status.initialized = False
         self.status.controller = None
         self.status.info = ""
+        ic4.Library.exit()
         print(f"Camera communication terminated successfully")   
 
     def grab_data(self, Naverage=1, **kwargs):
@@ -176,15 +262,12 @@ class DAQ_2DViewer_DMK(DAQ_Viewer_base):
         Naverage: (int) Number of averaging
         kwargs: (dict) of others optionals arguments
         """
-    
-        self.sink = ic4.SnapSink()
-        self.sink.AllocationStrategy(10, 4, 6, 0)
-        self.controller.stream_setup(self.sink, setup_option=ic4.StreamSetupOption.ACQUISITION_START)
 
-        #self.callback_signal.emit()  # will trigger the wait for acquisition
+        # Set sleep time to match frame rate to avoid overloading the camera (cleaner solution in future?)
+        time.sleep(1/self.controller.device_property_map.get_value_float(ic4.PropId.ACQUISITION_FRAME_RATE))
+        self.gui_data["ready"] = False
         self.emit_data()
-        self.controller.stream_stop()
-
+            
     def emit_data(self):
         """
             Fonction used to emit data obtained by callback.
@@ -193,14 +276,13 @@ class DAQ_2DViewer_DMK(DAQ_Viewer_base):
             daq_utils.ThreadCommand
         """
         try:
-            buffer = self.sink.snap_single(1000)
-            image = buffer.numpy_copy()
-            buffer.release()
+            image = self.gui_data["image"]
             if image is not None:
                 self.data_grabed_signal.emit([DataFromPlugins(name='DMK Camera',
                                                               data=[np.squeeze(image)],
                                                               dim=self.data_shape,
                                                               labels=[f'DMK_{self.data_shape}'])])
+
 
 
             # To make sure that timed events are executed in continuous grab mode
@@ -209,83 +291,26 @@ class DAQ_2DViewer_DMK(DAQ_Viewer_base):
         except Exception as e:
             self.emit_status(ThreadCommand('Update_Status', [str(e), 'log']))
 
-    def handle_device_lost():
-        print("Device lost!")
 
-    def device_lost(self):
-        token = self.controller.event_add_device_lost(self.handle_device_lost(self.controller))
-        self.controller.event_remove_device_lost(token)
-        self.controller.stream_stop()
-        self.controller.device_close()
-
-
-    def callback(self):
-        """optional asynchrone method called when the detector has finished its acquisition of data"""
-        data_tot = self.controller.your_method_to_get_data_from_buffer()
-        self.dte_signal.emit(DataToExport('myplugin',
-                                          data=[DataFromPlugins(name='Mock1', data=data_tot,
-                                                                dim='Data2D', labels=['label1'],
-                                                                x_axis=self.x_axis,
-                                                                y_axis=self.y_axis), ]))
     def stop(self):
         """Stop the current grab hardware wise if necessary"""
-
         return ''
-    
-    def wait_for_frame(self, since="lastread", timeout=20.0, period=1E-3):
-        """
-        Wait for a new camera frame.
 
-        Parameters:
-        - `since`: Defines the reference point for new frames. Can be:
-            - `"lastread"`: Wait for a frame after the last read frame.
-            - `"lastwait"`: Wait for a frame after the last `wait_for_frame` call.
-            - `"now"`: Wait for a frame acquired after this function call.
-        - `timeout`: Maximum waiting time (in seconds).
-        - `period`: Polling interval (in seconds).
 
-        Raises:
-        - `TimeoutError`: If no frame is received within `timeout`.
-        """
-        start_time = time.time()
+class Listener(ic4.QueueSinkListener):
+    def __init__(self, gui_data):
+        self.gui_data = gui_data
 
-        if since not in {"lastread", "lastwait", "now"}:
-            raise ValueError(f"Invalid 'since' value: {since}")
+    def sink_connected(self, sink: ic4.QueueSink, image_type: ic4.ImageType, min_buffers_required: int) -> bool:
+        return True
+    def sink_disconnected(self, sink: ic4.QueueSink):
+        pass
 
-        if since == "lastwait":
-            while time.time() - start_time < timeout:
-                try:
-                    image = self.sink.snap_single(1000)
-                    if image is not None:
-                        self.last_wait_frame = image
-                        return image
-                except ic4.IC4Exception:
-                    pass
-                time.sleep(period)
-            raise TimeoutError("⏳ Frame acquisition timed out!")
-
-        elif since == "lastread":
-            while self.get_new_images_range() is None:
-                self.wait_for_frame(since="lastwait", timeout=timeout)
-
-        else:  # "now"
-            last_img = self.get_new_images_range()
-            while True:
-                self.wait_for_frame(since="lastwait", timeout=timeout)
-                new_img = self.get_new_images_range()
-                if new_img and (last_img is None or new_img[1] > last_img):
-                    return
-
-    def get_new_images_range(self):
-        """Returns the index of the latest frame (if any)."""
-        try:
-            image = self.sink.snap_single(1000)
-            if image is not None:
-                self.last_read_frame = image
-                return (self.last_read_frame, self.last_read_frame)  # Simulating a range
-        except ic4.IC4Exception:
-            pass
-        return None
+    def frames_queued(self, sink: ic4.QueueSink):
+        buffer = sink.try_pop_output_buffer()
+        self.gui_data["image"] = buffer.numpy_copy()
+        self.gui_data["ready"] = True
+        buffer.release()
     
 class ImagingSourceCallback(QtCore.QObject):
     """Callback object """
