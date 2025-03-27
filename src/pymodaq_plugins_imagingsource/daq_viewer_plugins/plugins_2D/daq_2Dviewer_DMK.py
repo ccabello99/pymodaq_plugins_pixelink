@@ -157,8 +157,6 @@ class DAQ_2DViewer_DMK(DAQ_Viewer_base):
         initialized: bool
             False if initialization failed otherwise True
         """
-        ic4.Library.init(api_log_level=ic4.LogLevel.INFO, log_targets=ic4.LogTarget.STDERR)
-
 
         self.ini_detector_init(old_controller=controller,
                                new_controller=ic4.Grabber())
@@ -252,7 +250,6 @@ class DAQ_2DViewer_DMK(DAQ_Viewer_base):
         self.status.initialized = False
         self.status.controller = None
         self.status.info = ""
-        ic4.Library.exit()
         print(f"Camera communication terminated successfully")   
 
     def grab_data(self, Naverage=1, **kwargs):
@@ -328,4 +325,6 @@ class ImagingSourceCallback(QtCore.QObject):
 
 
 if __name__ == '__main__':
+    ic4.Library.init(api_log_level=ic4.LogLevel.INFO, log_targets=ic4.LogTarget.STDERR)
     main(__file__)
+    ic4.Library.exit()
