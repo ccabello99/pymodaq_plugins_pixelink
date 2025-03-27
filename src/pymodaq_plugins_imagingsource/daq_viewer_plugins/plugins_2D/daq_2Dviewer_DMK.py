@@ -9,8 +9,6 @@ import imagingcontrol4 as ic4
 
 from qtpy import QtWidgets, QtCore
 
-
-
 # TODO:
 # (1) change the name of the following class to DAQ_2DViewer_TheNameOfYourChoice
 # (2) change the name of this file to daq_2Dviewer_TheNameOfYourChoice ("TheNameOfYourChoice" should be the SAME
@@ -36,10 +34,11 @@ class DAQ_2DViewer_DMK(DAQ_Viewer_base):
     controller: object
         The particular object that allow the communication with the hardware, in general a python wrapper around the
          hardware library.
-         
-    # TODO add your particular attributes here if any
 
     """
+
+    library_initialized = False
+
     params = comon_parameters + [
         {'title': 'Camera Index:', 'name': 'camera_index', 'type': 'list', 'value': 0, 'default': 0, 'limits': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]},
         {'title': 'Camera Model:', 'name': 'camera_model', 'type': 'str', 'value': '', 'readonly': True},
@@ -79,7 +78,8 @@ class DAQ_2DViewer_DMK(DAQ_Viewer_base):
             A given parameter (within detector_settings) whose value has been changed by the user
         """
         if param.name() == "camera_index":
-            self.close()
+            if self.controller != None:
+                self.close()
             time.sleep(2)
             self.ini_detector(controller=self.controller, device_idx=param.value())
         elif param.name() == "width":
@@ -157,6 +157,11 @@ class DAQ_2DViewer_DMK(DAQ_Viewer_base):
         initialized: bool
             False if initialization failed otherwise True
         """
+
+        if not DAQ_2DViewer_DMK.library_initialized:
+            ic4.Library.init(api_log_level=ic4.LogLevel.INFO, log_targets=ic4.LogTarget.STDERR)
+            DAQ_2DViewer_DMK.library_initialized = True
+
 
         self.ini_detector_init(old_controller=controller,
                                new_controller=ic4.Grabber())
@@ -245,11 +250,13 @@ class DAQ_2DViewer_DMK(DAQ_Viewer_base):
         """Terminate the communication protocol"""
         if self.controller.is_streaming:
             self.controller.stream_stop()
+
         self.controller.device_close()
         self.controller = None  # Garbage collect the controller
         self.status.initialized = False
         self.status.controller = None
         self.status.info = ""
+            
         print(f"Camera communication terminated successfully")   
 
     def grab_data(self, Naverage=1, **kwargs):
@@ -325,6 +332,7 @@ class ImagingSourceCallback(QtCore.QObject):
 
 
 if __name__ == '__main__':
-    ic4.Library.init(api_log_level=ic4.LogLevel.INFO, log_targets=ic4.LogTarget.STDERR)
-    main(__file__)
-    ic4.Library.exit()
+    try:
+        main(__file__)
+    finally:
+        ic4.Library.exit()
