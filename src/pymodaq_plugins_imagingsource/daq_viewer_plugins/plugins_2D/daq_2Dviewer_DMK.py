@@ -167,7 +167,7 @@ class DAQ_2DViewer_DMK(DAQ_Viewer_base):
                                new_controller=ic4.Grabber())
         
         # Get number of available cameras and list them in the camera_index parameter
-        self.settings.param('camera_index').setLimits([0, len(ic4.DeviceEnum.devices())-1])
+        self.settings.param('camera_index').setLimits(list(range(0, len(ic4.DeviceEnum.devices()), 1)))
         
         # Get the device info of chosen camera index and open the device
         self.device_info = ic4.DeviceEnum.devices()[device_idx]
