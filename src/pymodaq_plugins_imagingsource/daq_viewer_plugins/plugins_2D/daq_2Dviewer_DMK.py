@@ -9,12 +9,7 @@ import imagingcontrol4 as ic4
 
 from qtpy import QtWidgets, QtCore
 
-# TODO:
-# (1) change the name of the following class to DAQ_2DViewer_TheNameOfYourChoice
-# (2) change the name of this file to daq_2Dviewer_TheNameOfYourChoice ("TheNameOfYourChoice" should be the SAME
-#     for the class name and the file name.)
-# (3) this file should then be put into the right folder, namely IN THE FOLDER OF THE PLUGIN YOU ARE DEVELOPING:
-#     pymodaq_plugins_my_plugin/daq_viewer_plugins/plugins_2D
+
 class DAQ_2DViewer_DMK(DAQ_Viewer_base):
     """ Instrument plugin class for a 2D viewer.
     
@@ -22,7 +17,7 @@ class DAQ_2DViewer_DMK(DAQ_Viewer_base):
     DAQ_Viewer_base. It makes a bridge between the DAQ_Viewer module and the Python wrapper of a particular instrument.
 
     
-    * Tested with DMK 42BUC03 camera.
+    * Tested with DMK 42BUC03/33GR0134 camera.
     * PyMoDAQ version 5.0.2
     * Tested on Windows 11
     * Installation instructions: For this camera, you need to install the Imaging Source drivers, 
@@ -40,10 +35,12 @@ class DAQ_2DViewer_DMK(DAQ_Viewer_base):
     library_initialized = False
 
     params = comon_parameters + [
-        {'title': 'Camera Index:', 'name': 'camera_index', 'type': 'list', 'value': 0, 'default': 0, 'limits': [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]},
+        {'title': 'Camera Index:', 'name': 'camera_index', 'type': 'list', 'value': 0, 'default': 0, 'limits': [0, 1]},
         {'title': 'Camera Model:', 'name': 'camera_model', 'type': 'str', 'value': '', 'readonly': True},
         {'title': 'Image Width', 'name': 'width', 'type': 'int', 'value': 1280, 'default': 1280, 'limits': [96, 1280]},
         {'title': 'Image Height', 'name': 'height', 'type': 'int', 'value': 960, 'default': 960, 'limits': [96, 960]},
+        {'title': 'Brightness', 'name': 'brightness', 'type': 'float', 'value': 1.0, 'default': 1.0, 'limits': [1.0, 500.0]},
+        {'title': 'Contrast', 'name': 'contrast', 'type': 'float', 'value': 1.0, 'default': 1.0, 'limits': [1.0, 500.0]},
         {'title': 'Exposure', 'name': 'exposure', 'type': 'group', 'children': [
             {'title': 'Auto Exposure', 'name': 'exposure_auto', 'type': 'list', 'value': "Off", 'default': "Off", 'limits': ['On', 'Off']},
             {'title': 'Exposure Time (ms)', 'name': 'exposure_time', 'type': 'float', 'value': 100.0, 'default': 100.0, 'limits': [100.0, 30000000.0]}
@@ -80,64 +77,75 @@ class DAQ_2DViewer_DMK(DAQ_Viewer_base):
         if param.name() == "camera_index":
             if self.controller != None:
                 self.close()
-            time.sleep(2)
             self.ini_detector(controller=self.controller, device_idx=param.value())
         elif param.name() == "width":
             try:
                 self.controller.device_property_map.set_value(ic4.PropId.WIDTH, param.value())
-                print(self.controller.device_property_map.get_value_int(ic4.PropId.WIDTH))
+                print("Pixel width = " + str(self.controller.device_property_map.get_value_int(ic4.PropId.WIDTH)))
             except ic4.IC4Exception:
                 pass
         elif param.name() == "height":
             try:
                 self.controller.device_property_map.set_value(ic4.PropId.HEIGHT, param.value())
-                print(self.controller.device_property_map.get_value_int(ic4.PropId.HEIGHT))
+                print("Pixel height = " + str(self.controller.device_property_map.get_value_int(ic4.PropId.HEIGHT)))
+            except ic4.IC4Exception:
+                pass
+        elif param.name() == "brightness":
+            try:
+                self.controller.device_property_map.set_value('Brightness', param.value())
+                print("Brightness = " + str(self.controller.device_property_map.get_value_int('Brightness')))
+            except ic4.IC4Exception:
+                pass
+        elif param.name() == "contrast":
+            try:
+                self.controller.device_property_map.set_value('Contrast', param.value())
+                print("Contrast = " + str(self.controller.device_property_map.get_value_int('Contrast')))
             except ic4.IC4Exception:
                 pass
         elif param.name() == "exposure_auto":
             try:
                 self.controller.device_property_map.set_value('Exposure_Auto', param.value())
-                print(self.controller.device_property_map.get_value_bool('Exposure_Auto'))
+                print("Auto exposure = " + str(self.controller.device_property_map.get_value_bool('Exposure_Auto')))
             except ic4.IC4Exception:
                 pass
             try:
                 self.controller.device_property_map.set_value('ExposureAuto', param.value())
-                print(self.controller.device_property_map.get_value_bool('ExposureAuto'))
+                print("Auto exposure = " + str(self.controller.device_property_map.get_value_bool('ExposureAuto')))
             except ic4.IC4Exception:
                 pass
         elif param.name() == "exposure_time":
             try:
                 self.controller.device_property_map.set_value(ic4.PropId.EXPOSURE_TIME, param.value())
-                print(self.controller.device_property_map.get_value_float(ic4.PropId.EXPOSURE_TIME))
+                print("Exposure time = " + str(self.controller.device_property_map.get_value_float(ic4.PropId.EXPOSURE_TIME)))
             except ic4.IC4Exception:
                 pass
         elif param.name() == "gain_auto":
             try:
                 self.controller.device_property_map.set_value('Gain_Auto', param.value())
-                print(self.controller.device_property_map.get_value_bool('Gain_Auto'))
+                print("Auto gain = " + str(self.controller.device_property_map.get_value_bool('Gain_Auto')))
             except ic4.IC4Exception:
                 pass
             try:
                 self.controller.device_property_map.set_value('GainAuto', param.value())
-                print(self.controller.device_property_map.get_value_bool('GainAuto'))
+                print("Auto gain = " + str(self.controller.device_property_map.get_value_bool('GainAuto')))
             except ic4.IC4Exception:
                 pass
         elif param.name() == "gain_value":
             try:
                 self.controller.device_property_map.set_value(ic4.PropId.GAIN, param.value())
-                print(self.controller.device_property_map.get_value_float(ic4.PropId.GAIN))
+                print("Gain = " + str(self.controller.device_property_map.get_value_float(ic4.PropId.GAIN)))
             except ic4.IC4Exception:
                 pass
         elif param.name() == "frame_rate":
             try:
                 self.controller.device_property_map.set_value(ic4.PropId.ACQUISITION_FRAME_RATE, param.value())
-                print(self.controller.device_property_map.get_value_float(ic4.PropId.ACQUISITION_FRAME_RATE))
+                print("Frame rate = " + str(self.controller.device_property_map.get_value_float(ic4.PropId.ACQUISITION_FRAME_RATE)))
             except ic4.IC4Exception:
                 pass
         elif param.name() == "gamma":
             try:
                 self.controller.device_property_map.set_value(ic4.PropId.GAMMA, param.value())
-                print(self.controller.device_property_map.get_value_float(ic4.PropId.GAMMA))
+                print("Gamma = " + str(self.controller.device_property_map.get_value_float(ic4.PropId.GAMMA)))
             except ic4.IC4Exception:
                 pass
 
@@ -189,7 +197,19 @@ class DAQ_2DViewer_DMK(DAQ_Viewer_base):
         try:
             self.settings.param('height').setValue(self.map.get_value_int(ic4.PropId.HEIGHT))
             self.settings.param('height').setDefault(self.map.get_value_int(ic4.PropId.HEIGHT))
-            self.settings.param('width').setLimits([self.map[ic4.PropId.HEIGHT].minimum, self.map[ic4.PropId.HEIGHT].maximum])
+            self.settings.param('height').setLimits([self.map[ic4.PropId.HEIGHT].minimum, self.map[ic4.PropId.HEIGHT].maximum])
+        except ic4.IC4Exception:
+            pass
+        try:
+            self.settings.param('brightness').setValue(self.map.get_value_float('Brightness'))
+            self.settings.param('brightness').setDefault(self.map.get_value_float('Brightness'))
+            self.settings.param('brightness').setLimits([self.map['Brightness'].minimum, self.map['Brightness'].maximum])
+        except ic4.IC4Exception:
+            pass
+        try:
+            self.settings.param('contrast').setValue(self.map.get_value_float('Contrast'))
+            self.settings.param('contrast').setDefault(self.map.get_value_float('Contrast'))
+            self.settings.param('contrast').setLimits([self.map['Contrast'].minimum, self.map['Contrast'].maximum])
         except ic4.IC4Exception:
             pass
         try:
@@ -203,7 +223,7 @@ class DAQ_2DViewer_DMK(DAQ_Viewer_base):
         try:
             self.settings.child('exposure', 'exposure_time').setValue(self.map.get_value_float(ic4.PropId.EXPOSURE_TIME))
             self.settings.child('exposure', 'exposure_time').setDefault(self.map.get_value_float(ic4.PropId.EXPOSURE_TIME))
-            self.settings.param('width').setLimits([self.map[ic4.PropId.EXPOSURE_TIME].minimum, self.map[ic4.PropId.EXPOSURE_TIME].maximum])
+            self.settings.child('exposure', 'exposure_time').setLimits([self.map[ic4.PropId.EXPOSURE_TIME].minimum, self.map[ic4.PropId.EXPOSURE_TIME].maximum])
         except ic4.IC4Exception:
             pass
         try:
@@ -217,19 +237,19 @@ class DAQ_2DViewer_DMK(DAQ_Viewer_base):
         try:
             self.settings.child('gain', 'gain_value').setValue(self.map.get_value_float(ic4.PropId.GAIN))
             self.settings.child('gain', 'gain_value').setDefault(self.map.get_value_float(ic4.PropId.GAIN))
-            self.settings.param('width').setLimits([self.map[ic4.PropId.GAIN].minimum, self.map[ic4.PropId.GAIN].maximum])
+            self.settings.child('gain', 'gain_value').setLimits([self.map[ic4.PropId.GAIN].minimum, self.map[ic4.PropId.GAIN].maximum])
         except ic4.IC4Exception:
             pass
         try:
             self.settings.param('frame_rate').setValue(self.map.get_value_float(ic4.PropId.ACQUISITION_FRAME_RATE))
             self.settings.param('frame_rate').setDefault(self.map.get_value_float(ic4.PropId.ACQUISITION_FRAME_RATE))
-            self.settings.param('width').setLimits([self.map[ic4.PropId.ACQUISITION_FRAME_RATE].minimum, self.map[ic4.PropId.ACQUISITION_FRAME_RATE].maximum])
+            self.settings.param('frame_rate').setLimits([self.map[ic4.PropId.ACQUISITION_FRAME_RATE].minimum, self.map[ic4.PropId.ACQUISITION_FRAME_RATE].maximum])
         except ic4.IC4Exception:
             pass
         try:
             self.settings.param('gamma').setValue(self.map.get_value_float(ic4.PropId.GAMMA))
             self.settings.param('gamma').setDefault(self.map.get_value_float(ic4.PropId.GAMMA))
-            self.settings.param('width').setLimits([self.map[ic4.PropId.GAMMA].minimum, self.map[ic4.PropId.GAMMA].maximum])
+            self.settings.param('gamma').setLimits([self.map[ic4.PropId.GAMMA].minimum, self.map[ic4.PropId.GAMMA].maximum])
         except ic4.IC4Exception:
             pass
         
@@ -248,15 +268,11 @@ class DAQ_2DViewer_DMK(DAQ_Viewer_base):
 
     def close(self):
         """Terminate the communication protocol"""
-        if self.controller.is_streaming:
-            self.controller.stream_stop()
-
         self.controller.device_close()
         self.controller = None  # Garbage collect the controller
         self.status.initialized = False
         self.status.controller = None
-        self.status.info = ""
-            
+        self.status.info = ""           
         print(f"Camera communication terminated successfully")   
 
     def grab_data(self, Naverage=1, **kwargs):
