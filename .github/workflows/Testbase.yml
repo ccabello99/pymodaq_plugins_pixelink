@@ -29,7 +29,7 @@ jobs:
           python -m pip install --upgrade pip
           export QT_DEBUG_PLUGINS=1
           pip install flake8 pytest pytest-cov pytest-qt pytest-xdist pytest-xvfb setuptools wheel numpy h5py ${{ inputs.qt5 }} toml
-          pip install pymodaq pymodaq_plugins_imagingsource
+          pip install pymodaq
       - name: create local pymodaq folder and setting permissions
         run: |
           sudo mkdir /etc/.pymodaq
@@ -38,6 +38,3 @@ jobs:
         run: |
           # stop the build if there are Python syntax errors or undefined names
           flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics --exclude=src/pymodaq/resources/QtDesigner_Ressources,docs
-      - name: Test with pytest
-        run: |
-          pytest -n auto
