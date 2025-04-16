@@ -3,7 +3,7 @@ pymodaq_plugins_imagingsource
 
 .. the following must be adapted to your developed package, links to pypi, github  description...
 
-.. image:: https://img.shields.io/pypi/v/pymodaq_plugins_template.svg
+.. image:: https://img.shields.io/pypi/v/pymodaq_plugins_imagingsource.svg
    :target: https://pypi.org/project/pymodaq_plugins_imagingsource/
    :alt: Latest Version
 
@@ -61,5 +61,4 @@ Installation instructions
 =========================
 * Tested on PyMoDAQ version 5.0.2
 * Tested on Windows 11
-* Must install imagingcontrol4 in your Python environment
 * Must install legacy "Device Driver for USB Cameras" &  "Device Driver for GigE Cameras" from https://www.theimagingsource.com/en-us/support/download/ before running

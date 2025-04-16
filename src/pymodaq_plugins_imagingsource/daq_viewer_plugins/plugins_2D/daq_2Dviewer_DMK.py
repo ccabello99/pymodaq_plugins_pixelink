@@ -21,8 +21,7 @@ class DAQ_2DViewer_DMK(DAQ_Viewer_base):
     * PyMoDAQ version 5.0.2
     * Tested on Windows 11
     * Installation instructions: For this camera, you need to install the Imaging Source drivers, 
-                                 specifically "Device Driver for USB Cameras" in legacy software
-                                 and the Python wrapper
+                                 specifically "Device Driver for USB Cameras" and/or "Device Driver for GigE Cameras" in legacy software
 
     Attributes:
     -----------
@@ -35,22 +34,25 @@ class DAQ_2DViewer_DMK(DAQ_Viewer_base):
     library_initialized = False
 
     params = comon_parameters + [
-        {'title': 'Camera Index:', 'name': 'camera_index', 'type': 'list', 'value': 0, 'default': 0, 'limits': [0, 1]},
-        {'title': 'Camera Model:', 'name': 'camera_model', 'type': 'str', 'value': '', 'readonly': True},
+        {'title': 'Camera Identifiers', 'name': 'ID', 'type': 'group', 'children': [
+            {'title': 'Camera Index:', 'name': 'camera_index', 'type': 'list', 'value': 0, 'default': 0, 'limits': [0, 1]},
+            {'title': 'Camera Model:', 'name': 'camera_model', 'type': 'str', 'value': '', 'readonly': True},
+            {'title': 'Camera User ID:', 'name': 'camera_user_id', 'type': 'str', 'value': ''}
+        ]},
         {'title': 'Image Width', 'name': 'width', 'type': 'int', 'value': 1280, 'default': 1280, 'limits': [96, 1280]},
         {'title': 'Image Height', 'name': 'height', 'type': 'int', 'value': 960, 'default': 960, 'limits': [96, 960]},
-        {'title': 'Brightness', 'name': 'brightness', 'type': 'float', 'value': 1.0, 'default': 1.0, 'limits': [1.0, 500.0]},
-        {'title': 'Contrast', 'name': 'contrast', 'type': 'float', 'value': 1.0, 'default': 1.0, 'limits': [1.0, 500.0]},
+        {'title': 'Brightness', 'name': 'brightness', 'type': 'slide', 'value': 1.0, 'default': 1.0, 'limits': [1.0, 500.0]},
+        {'title': 'Contrast', 'name': 'contrast', 'type': 'slide', 'value': 1.0, 'default': 1.0, 'limits': [1.0, 500.0]},
         {'title': 'Exposure', 'name': 'exposure', 'type': 'group', 'children': [
-            {'title': 'Auto Exposure', 'name': 'exposure_auto', 'type': 'list', 'value': "Off", 'default': "Off", 'limits': ['On', 'Off']},
+            {'title': 'Auto Exposure', 'name': 'exposure_auto', 'type': 'led_push', 'value': "Off", 'default': "Off", 'limits': ['On', 'Off']},
             {'title': 'Exposure Time (ms)', 'name': 'exposure_time', 'type': 'float', 'value': 100.0, 'default': 100.0, 'limits': [100.0, 30000000.0]}
         ]},
         {'title': 'Gain', 'name': 'gain', 'type': 'group', 'children': [
-            {'title': 'Auto Gain', 'name': 'gain_auto', 'type': 'list', 'value': "Off", 'default': "Off", 'limits': ['On', 'Off']},
-            {'title': 'Value', 'name': 'gain_value', 'type': 'float', 'value': 34.0, 'default': 34.0, 'limits': [34.0, 255.0]}
+            {'title': 'Auto Gain', 'name': 'gain_auto', 'type': 'led_push', 'value': "Off", 'default': "Off", 'limits': ['On', 'Off']},
+            {'title': 'Value', 'name': 'gain_value', 'type': 'slide', 'value': 34.0, 'default': 34.0, 'limits': [34.0, 255.0]}
         ]},
-        {'title': 'Frame Rate', 'name': 'frame_rate', 'type': 'float', 'value': 25.0, 'default': 25.0, 'limits': [7.5, 25.0]},
-        {'title': 'Gamma', 'name': 'gamma', 'type': 'float', 'value': 1.0, 'default': 1.0, 'limits': [1.0, 500.0]}
+        {'title': 'Frame Rate', 'name': 'frame_rate', 'type': 'slide', 'value': 25.0, 'default': 25.0, 'limits': [7.5, 25.0]},
+        {'title': 'Gamma', 'name': 'gamma', 'type': 'slide', 'value': 1.0, 'default': 1.0, 'limits': [1.0, 500.0]}
         
     ]
 
@@ -78,74 +80,68 @@ class DAQ_2DViewer_DMK(DAQ_Viewer_base):
             if self.controller != None:
                 self.close()
             self.ini_detector(controller=self.controller, device_idx=param.value())
+        elif param.name() == "camera_user_id":
+            try:
+                if self.device_info.model_name == 'DMK 33GR0134':
+                    self.controller.device_property_map.set_value('DeviceUserID', param.value())
+                elif self.device_info.model_name == 'DMK 42BUC03':
+                    pass
+            except ic4.IC4Exception:
+                pass
         elif param.name() == "width":
             try:
                 self.controller.device_property_map.set_value(ic4.PropId.WIDTH, param.value())
-                print("Pixel width = " + str(self.controller.device_property_map.get_value_int(ic4.PropId.WIDTH)))
             except ic4.IC4Exception:
                 pass
         elif param.name() == "height":
             try:
                 self.controller.device_property_map.set_value(ic4.PropId.HEIGHT, param.value())
-                print("Pixel height = " + str(self.controller.device_property_map.get_value_int(ic4.PropId.HEIGHT)))
             except ic4.IC4Exception:
                 pass
         elif param.name() == "brightness":
             try:
                 self.controller.device_property_map.set_value('Brightness', param.value())
-                print("Brightness = " + str(self.controller.device_property_map.get_value_int('Brightness')))
             except ic4.IC4Exception:
                 pass
         elif param.name() == "contrast":
             try:
                 self.controller.device_property_map.set_value('Contrast', param.value())
-                print("Contrast = " + str(self.controller.device_property_map.get_value_int('Contrast')))
             except ic4.IC4Exception:
                 pass
         elif param.name() == "exposure_auto":
             try:
-                self.controller.device_property_map.set_value('Exposure_Auto', param.value())
-                print("Auto exposure = " + str(self.controller.device_property_map.get_value_bool('Exposure_Auto')))
-            except ic4.IC4Exception:
-                pass
-            try:
-                self.controller.device_property_map.set_value('ExposureAuto', param.value())
-                print("Auto exposure = " + str(self.controller.device_property_map.get_value_bool('ExposureAuto')))
+                if self.device_info.model_name == 'DMK 42BUC03':
+                    self.controller.device_property_map.set_value('Exposure_Auto', param.value())
+                elif self.device_info.model_name == 'DMK 33GR0134':
+                    self.controller.device_property_map.set_value('ExposureAuto', param.value())
             except ic4.IC4Exception:
                 pass
         elif param.name() == "exposure_time":
             try:
-                self.controller.device_property_map.set_value(ic4.PropId.EXPOSURE_TIME, param.value())
-                print("Exposure time = " + str(self.controller.device_property_map.get_value_float(ic4.PropId.EXPOSURE_TIME)))
+                self.controller.device_property_map.set_value(ic4.PropId.EXPOSURE_TIME, param.value()*1e3)
             except ic4.IC4Exception:
                 pass
         elif param.name() == "gain_auto":
             try:
-                self.controller.device_property_map.set_value('Gain_Auto', param.value())
-                print("Auto gain = " + str(self.controller.device_property_map.get_value_bool('Gain_Auto')))
-            except ic4.IC4Exception:
-                pass
-            try:
-                self.controller.device_property_map.set_value('GainAuto', param.value())
-                print("Auto gain = " + str(self.controller.device_property_map.get_value_bool('GainAuto')))
+                if self.device_info.model_name == 'DMK 42BUC03':
+                    self.controller.device_property_map.set_value('Gain_Auto', param.value())
+                elif self.device_info.model_name == 'DMK 33GR0134':
+                    self.controller.device_property_map.set_value('GainAuto', param.value())
             except ic4.IC4Exception:
                 pass
         elif param.name() == "gain_value":
             try:
                 self.controller.device_property_map.set_value(ic4.PropId.GAIN, param.value())
-                print("Gain = " + str(self.controller.device_property_map.get_value_float(ic4.PropId.GAIN)))
             except ic4.IC4Exception:
                 pass
         elif param.name() == "frame_rate":
             try:
                 self.controller.device_property_map.set_value(ic4.PropId.ACQUISITION_FRAME_RATE, param.value())
-                print("Frame rate = " + str(self.controller.device_property_map.get_value_float(ic4.PropId.ACQUISITION_FRAME_RATE)))
             except ic4.IC4Exception:
                 pass
         elif param.name() == "gamma":
             try:
                 self.controller.device_property_map.set_value(ic4.PropId.GAMMA, param.value())
-                print("Gamma = " + str(self.controller.device_property_map.get_value_float(ic4.PropId.GAMMA)))
             except ic4.IC4Exception:
                 pass
 
@@ -175,18 +171,35 @@ class DAQ_2DViewer_DMK(DAQ_Viewer_base):
                                new_controller=ic4.Grabber())
         
         # Get number of available cameras and list them in the camera_index parameter
-        self.settings.param('camera_index').setLimits(list(range(0, len(ic4.DeviceEnum.devices()), 1)))
+        devices = ic4.DeviceEnum.devices()
+        self.settings.child('ID','camera_index').setLimits(list(range(0, len(devices), 1)))
         
         # Get the device info of chosen camera index and open the device
-        self.device_info = ic4.DeviceEnum.devices()[device_idx]
-        self.controller.device_open(self.device_info)
+        while device_idx < len(devices):
+            try:
+                self.device_info = devices[device_idx]
+                self.controller.device_open(self.device_info)
+                break
+            except ic4.IC4Exception:
+                device_idx += 1
+                time.sleep(1.5)
+        else:
+            raise RuntimeError("No available devices could be opened.")
 
-        # Get device properties and set pixel format to Mono8
+        # Get device properties and set pixel format to Mono8 (Mono16) depending on the camera model
         self.map = self.controller.device_property_map
-        self.controller.device_property_map.try_set_value(ic4.PropId.PIXEL_FORMAT, ic4.PixelFormat.Mono8)
+        if self.device_info.model_name == 'DMK 42BUC03':
+            self.controller.device_property_map.try_set_value(ic4.PropId.PIXEL_FORMAT, ic4.PixelFormat.Mono8)
+        elif self.device_info.model_name == 'DMK 33GR0134':
+            self.controller.device_property_map.try_set_value(ic4.PropId.PIXEL_FORMAT, ic4.PixelFormat.Mono16)
 
         # Set param values for configuration based on camera in use
-        self.settings.param('camera_model').setValue(self.device_info.model_name)
+        self.settings.child('ID','camera_model').setValue(self.device_info.model_name)
+
+        if self.device_info.model_name == 'DMK 33GR0134':
+            self.settings.child('ID','camera_user_id').setValue(self.map.get_value_str('DeviceUserID'))
+        elif self.device_info.model_name == 'DMK 42BUC03':
+            self.settings.child('ID','camera_user_id').setValue('No User ID')
 
         try:
             self.settings.param('width').setValue(self.map.get_value_int(ic4.PropId.WIDTH))
@@ -213,11 +226,10 @@ class DAQ_2DViewer_DMK(DAQ_Viewer_base):
         except ic4.IC4Exception:
             pass
         try:
-            self.settings.child('exposure', 'exposure_auto').setValue(self.map.get_value_bool('Exposure_Auto'))
-        except ic4.IC4Exception:
-            pass
-        try:
-            self.settings.child('exposure', 'exposure_auto').setValue(self.map.get_value_bool('ExposureAuto'))
+            if self.device_info.model_name == 'DMK 42BUC03':
+                self.settings.child('exposure', 'exposure_auto').setValue(self.map.get_value_bool('Exposure_Auto'))
+            elif self.device_info.model_name == 'DMK 33GR0134':
+                self.settings.child('exposure', 'exposure_auto').setValue(self.map.get_value_bool('ExposureAuto'))
         except ic4.IC4Exception:
             pass
         try:
@@ -227,11 +239,10 @@ class DAQ_2DViewer_DMK(DAQ_Viewer_base):
         except ic4.IC4Exception:
             pass
         try:
-            self.settings.child('gain', 'gain_auto').setValue(self.map.get_value_bool('Gain_Auto'))
-        except ic4.IC4Exception:
-            pass
-        try:
-            self.settings.child('gain', 'gain_auto').setValue(self.map.get_value_bool('GainAuto'))
+            if self.device_info.model_name == 'DMK 42BUC03':
+                self.settings.child('gain', 'gain_auto').setValue(self.map.get_value_bool('Gain_Auto'))
+            elif self.device_info.model_name == 'DMK 33GR0134':
+                self.settings.child('gain', 'gain_auto').setValue(self.map.get_value_bool('GainAuto'))
         except ic4.IC4Exception:
             pass
         try:
@@ -273,7 +284,7 @@ class DAQ_2DViewer_DMK(DAQ_Viewer_base):
         self.status.initialized = False
         self.status.controller = None
         self.status.info = ""           
-        print(f"Camera communication terminated successfully")   
+        print(f"{self.device_info.model_name} communication terminated successfully")   
 
     def grab_data(self, Naverage=1, **kwargs):
         """
@@ -332,6 +343,7 @@ class Listener(ic4.QueueSinkListener):
         self.gui_data["ready"] = True
         buffer.release()
     
+# TODO Implement a callback for cleaner code
 class ImagingSourceCallback(QtCore.QObject):
     """Callback object """
     data_sig = pyqtSignal()
