@@ -59,6 +59,6 @@ Extensions
 
 Installation instructions
 =========================
-* Tested on PyMoDAQ version 5.0.2
+* Tested on PyMoDAQ version 4.1.1
 * Tested on Windows 11
 * Must install legacy "Device Driver for USB Cameras" &  "Device Driver for GigE Cameras" from https://www.theimagingsource.com/en-us/support/download/ before running
