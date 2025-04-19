@@ -1,14 +1,19 @@
 import numpy as np
 import time
-
-from qtpy.QtCore import QThread, QTimer
-from pymodaq.utils.daq_utils import ThreadCommand
-from pymodaq.utils.data import DataFromPlugins, Axis, DataToExport, DataWithAxes, DataBase, DataSource, DataDim, DataDistribution
-from pymodaq.control_modules.viewer_utility_classes import DAQ_Viewer_base, comon_parameters, main
-from pymodaq.utils.parameter import Parameter
-from PyQt5.QtCore import pyqtSignal, pyqtSlot
+import sys, os
 import imagingcontrol4 as ic4
 
+
+from easydict import EasyDict as edict
+from pymodaq.utils.daq_utils import (
+    ThreadCommand,
+    getLineInfo,
+)
+from pymodaq.utils.parameter import Parameter
+from pymodaq.utils.data import Axis, DataFromPlugins, DataToExport
+from pymodaq.control_modules.viewer_utility_classes import DAQ_Viewer_base, comon_parameters
+from pymodaq.utils.parameter.utils import iter_children
+from PyQt6.QtCore import pyqtSignal, pyqtSlot
 from qtpy import QtWidgets, QtCore
 
 
@@ -60,7 +65,6 @@ class DAQ_2DViewer_DMK(DAQ_Viewer_base):
     ]
 
     callback_signal = pyqtSignal()
-    axes = []
 
     def ini_attributes(self):
         """Initialize attributes"""
@@ -190,6 +194,7 @@ class DAQ_2DViewer_DMK(DAQ_Viewer_base):
         self.device_idx = self.settings.child('ID','camera_index').value()
         
         # Get the device info of chosen camera index and open the device
+        # If opening fails, try next device after small sleep to avoid library errors
         if self.device_idx == 0:
             self.device_info = devices[0]
             self.controller.device_open(self.device_info)
@@ -212,15 +217,13 @@ class DAQ_2DViewer_DMK(DAQ_Viewer_base):
         elif self.device_info.model_name == 'DMK 33GR0134':
             self.controller.device_property_map.try_set_value(ic4.PropId.PIXEL_FORMAT, ic4.PixelFormat.Mono16)
 
-        # Set param values for configuration based on camera in use
+        # Set param values for configuration based on camera in use (maybe compactify this later, but it's working..)
         self.settings.child('ID','camera_model').setValue(self.device_info.model_name)
 
         if self.device_info.model_name == 'DMK 33GR0134':
             self.settings.child('ID','camera_user_id').setValue(self.map.get_value_str('DeviceUserID'))
         elif self.device_info.model_name == 'DMK 42BUC03':
             self.settings.child('ID','camera_user_id').setValue(self.user_id)
-
-
         try:
             self.settings.param('brightness').setValue(self.map.get_value_float('Brightness'))
             self.settings.param('brightness').setDefault(self.map.get_value_float('Brightness'))
@@ -295,7 +298,7 @@ class DAQ_2DViewer_DMK(DAQ_Viewer_base):
         self.sink = ic4.QueueSink(listener_callback.get_listener(), max_output_buffers=1)
         listener_callback.get_listener().sink = self.sink  # Store the sink in the listener
 
-        # Initialize the stream setup
+        # Initialize the stream
         self.controller.stream_setup(self.sink)
 
         self._prepare_view()
@@ -334,7 +337,15 @@ class DAQ_2DViewer_DMK(DAQ_Viewer_base):
 
     def close(self):
         """Terminate the communication protocol"""
+        if self.controller.is_acquisition_active:
+            self.controller.acquisition_stop()
         self.controller.device_close()
+
+        if self.callback_thread is not None:
+            self.callback_thread.quit()
+            self.callback_thread.wait()
+            self.callback_thread = None
+
         self.controller = None  # Garbage collect the controller
         self.status.initialized = False
         self.status.controller = None
@@ -363,15 +374,14 @@ class DAQ_2DViewer_DMK(DAQ_Viewer_base):
     def emit_data(self):
         try:
             frame = self.gui_data["frame"]
-            if frame is None or frame.size == 0:
-                pass
-            else:
+            if frame is not None:
                 self.dte_signal.emit(
                     DataToExport(f'{self.user_id}', data=[DataFromPlugins(
                         name=f'{self.user_id}',
                         data=[np.squeeze(frame)],
                         dim=self.data_shape,
                         labels=[f'{self.user_id}_{self.data_shape}'])]))
+                self.gui_data["ready"] = False
             QtWidgets.QApplication.processEvents()
         except Exception as e:
             self.emit_status(ThreadCommand('Update_Status', [str(e), 'log']))
@@ -381,6 +391,21 @@ class DAQ_2DViewer_DMK(DAQ_Viewer_base):
         """Stop the current grab hardware wise if necessary"""
         self.controller.acquisition_stop()
         return ''
+    
+    def crosshair(self, crosshair_info, ind_viewer=0):
+        sleep_ms = 10
+        ind = 0
+
+        while not self.gui_data["ready"]:
+            QtCore.QThread.msleep(sleep_ms)
+            QtWidgets.QApplication.processEvents()
+
+            ind += 1
+            if ind * sleep_ms >= 1000:
+                self.emit_status(ThreadCommand('_raise_timeout'))
+                break
+
+        
 
 class ListenerCallback(QtCore.QObject):
     data_ready = pyqtSignal()  # Signal when data is ready
@@ -425,9 +450,37 @@ class Listener(ic4.QueueSinkListener):
         # Handle when sink is disconnected
         self.sink = None
 
+def main():
+    """
+    this method start a DAQ_Viewer object with this defined plugin as detector
+    Returns
+    -------
+
+    """
+    import sys
+    from PyQt6 import QtWidgets
+    from pymodaq.utils.gui_utils import DockArea
+    from pymodaq.control_modules.daq_viewer import DAQ_Viewer
+    from pathlib import Path
+
+    app = QtWidgets.QApplication(sys.argv)
+    win = QtWidgets.QMainWindow()
+    area = DockArea()
+    win.setCentralWidget(area)
+    win.resize(1000, 500)
+    win.setWindowTitle("PyMoDAQ Viewer")
+    detector = Path(__file__).stem[13:]
+    det_type = f"DAQ{Path(__file__).stem[4:6].upper()}"
+    prog = DAQ_Viewer(area, title="Testing")
+    win.show()
+    prog.daq_type = det_type
+    prog.detector = detector
+    prog.init_hardware_ui()
+
+    sys.exit(app.exec_())
 
 if __name__ == '__main__':
     try:
-        main(__file__)
+        main()
     finally:
         ic4.Library.exit()
