@@ -82,9 +82,11 @@ class DAQ_2DViewer_DMK(DAQ_Viewer_base):
         self.sink: ic4.QueueSink = None
         self.callback_thread = None
 
+        self._crosshair = None
         self.x_axis = None
         self.y_axis = None
-        self.data_shape = 'Data2D'
+        self.axes = None
+        self.data_shape = None
 
 
     def commit_settings(self, param: Parameter):
@@ -322,19 +324,34 @@ class DAQ_2DViewer_DMK(DAQ_Viewer_base):
 
         mock_data = np.zeros((width, height))
 
-        if width != 1 and height != 1:
-            data_shape = 'Data2D'
+        self.x_axis = Axis(data=np.linspace(1, width, width), label='Pixels', index = 1)
+
+        # Switches viewer type depending on image size
+        if height != 1:
+            self.y_axis = Axis(data=np.linspace(1, height, height), label='Pixels', index = 1)
+
+            if width != 1:
+                data_shape = "Data2D"
+                axes = [self.x_axis, self.y_axis]
+
+            else:
+                data_shape = "Data1D"
+                axes = [self.y_axis]
         else:
-            data_shape = 'Data1D'
+            data_shape = "Data1D"
+            self.x_axis.index = 0
+            axes = [self.x_axis]
 
         if data_shape != self.data_shape:
             self.data_shape = data_shape
+            self.axes = axes
             self.dte_signal_temp.emit(
                 DataToExport(f'{self.user_id}',
                              data=[DataFromPlugins(name=f'{self.user_id}',
-                                                   data=[np.squeeze(mock_data)],
+                                                   data=[np.squeeze(np.zeros((height, width)))],
                                                    dim=self.data_shape,
-                                                   labels=[f'{self.user_id}_{self.data_shape}'])]))
+                                                   labels=[f'{self.user_id}_{self.data_shape}'],
+                                                   axes=self.axes)]))
         
             QtWidgets.QApplication.processEvents()
 
@@ -378,12 +395,16 @@ class DAQ_2DViewer_DMK(DAQ_Viewer_base):
         try:
             frame = self.gui_data["frame"]
             if frame is not None:
+                width = self.settings.param('width').value()
+                height = self.settings.param('height').value()
                 self.dte_signal.emit(
                     DataToExport(f'{self.user_id}', data=[DataFromPlugins(
                         name=f'{self.user_id}',
-                        data=[np.squeeze(frame)],
+                        data=[np.squeeze(frame.reshape(height, width))],
                         dim=self.data_shape,
-                        labels=[f'{self.user_id}_{self.data_shape}'])]))
+                        labels=[f'{self.user_id}_{self.data_shape}'],
+                        axes=self.axes)]))
+                
                 self.gui_data["ready"] = False
             QtWidgets.QApplication.processEvents()
         except Exception as e:
