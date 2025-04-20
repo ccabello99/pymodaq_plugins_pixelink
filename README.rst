@@ -61,4 +61,4 @@ Installation instructions
 =========================
 * Tested on PyMoDAQ version 4.1.1
 * Tested on Windows 11
-* Must install legacy "Device Driver for USB Cameras" &  "Device Driver for GigE Cameras" from https://www.theimagingsource.com/en-us/support/download/ before running
+* Must install legacy "Device Driver for USB Cameras" &  "Device Driver for GigE Cameras", and corresponding IC4 Drivers from https://www.theimagingsource.com/en-us/support/download/ before running
