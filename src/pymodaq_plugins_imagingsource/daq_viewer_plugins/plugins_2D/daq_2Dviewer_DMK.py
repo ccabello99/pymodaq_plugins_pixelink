@@ -1,10 +1,14 @@
 import numpy as np
 import time
-import sys, os
 import imagingcontrol4 as ic4
 
+import warnings
+import numpy as np
 
-from easydict import EasyDict as edict
+# Suppress only NumPy RuntimeWarnings (bc of crosshair bug)
+warnings.filterwarnings("ignore", category=RuntimeWarning, module="numpy")
+
+
 from pymodaq.utils.daq_utils import (
     ThreadCommand,
     getLineInfo,
@@ -12,8 +16,7 @@ from pymodaq.utils.daq_utils import (
 from pymodaq.utils.parameter import Parameter
 from pymodaq.utils.data import Axis, DataFromPlugins, DataToExport
 from pymodaq.control_modules.viewer_utility_classes import DAQ_Viewer_base, comon_parameters
-from pymodaq.utils.parameter.utils import iter_children
-from PyQt6.QtCore import pyqtSignal, pyqtSlot
+from PyQt6.QtCore import pyqtSignal
 from qtpy import QtWidgets, QtCore
 
 
