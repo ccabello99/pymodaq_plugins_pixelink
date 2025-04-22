@@ -200,20 +200,16 @@ class DAQ_2DViewer_DMK(DAQ_Viewer_base):
         
         # Get the device info of chosen camera index and open the device
         # If opening fails, try next device after small sleep to avoid library errors
-        if self.device_idx == 0:
-            self.device_info = devices[0]
-            self.controller.device_open(self.device_info)
+        while self.device_idx < len(devices):
+            try:
+                self.device_info = devices[self.device_idx]
+                self.controller.device_open(self.device_info)
+                break
+            except ic4.IC4Exception:
+                self.device_idx += 1
+                time.sleep(1.5)
         else:
-            while self.device_idx < len(devices):
-                try:
-                    self.device_info = devices[self.device_idx]
-                    self.controller.device_open(self.device_info)
-                    break
-                except ic4.IC4Exception:
-                    self.device_idx += 1
-                    time.sleep(1.5)
-            else:
-                raise RuntimeError("No available devices could be opened.")
+            raise RuntimeError("No available devices could be opened.")
 
         # Get device properties and set pixel format to Mono8 (Mono16) depending on the camera model
         self.map = self.controller.device_property_map
@@ -313,47 +309,38 @@ class DAQ_2DViewer_DMK(DAQ_Viewer_base):
         return info, initialized
     
     def _prepare_view(self):
-        """Preparing a data viewer by emitting temporary data. Typically, needs to be called whenever the
-        ROIs are changed"""
+         """Preparing a data viewer by emitting temporary data. Typically, needs to be called whenever the
+         ROIs are changed"""
+ 
+         width = self.controller.device_property_map.get_value_int(ic4.PropId.WIDTH)
+         height = self.controller.device_property_map.get_value_int(ic4.PropId.HEIGHT)
+ 
+         self.settings.param('width').setValue(width)
+         self.settings.param('height').setValue(height)
+ 
+         mock_data = np.zeros((width, height))
 
-        width = self.controller.device_property_map.get_value_int(ic4.PropId.WIDTH)
-        height = self.controller.device_property_map.get_value_int(ic4.PropId.HEIGHT)
-
-        self.settings.param('width').setValue(width)
-        self.settings.param('height').setValue(height)
-
-        mock_data = np.zeros((width, height))
-
-        self.x_axis = Axis(data=np.linspace(1, width, width), label='Pixels', index = 1)
-
-        # Switches viewer type depending on image size
-        if height != 1:
-            self.y_axis = Axis(data=np.linspace(1, height, height), label='Pixels', index = 1)
-
-            if width != 1:
-                data_shape = "Data2D"
-                axes = [self.x_axis, self.y_axis]
-
-            else:
-                data_shape = "Data1D"
-                axes = [self.y_axis]
-        else:
-            data_shape = "Data1D"
-            self.x_axis.index = 0
-            axes = [self.x_axis]
-
-        if data_shape != self.data_shape:
-            self.data_shape = data_shape
-            self.axes = axes
-            self.dte_signal_temp.emit(
-                DataToExport(f'{self.user_id}',
-                             data=[DataFromPlugins(name=f'{self.user_id}',
-                                                   data=[np.squeeze(np.zeros((height, width)))],
-                                                   dim=self.data_shape,
-                                                   labels=[f'{self.user_id}_{self.data_shape}'],
-                                                   axes=self.axes)]))
-        
-            QtWidgets.QApplication.processEvents()
+         self.x_axis = Axis(label='Pixels', data=np.linspace(1, width, width), index=0)
+ 
+         if width != 1 and height != 1:
+             data_shape = 'Data2D'
+             self.y_axis = Axis(label='Pixels', data=np.linspace(1, height, height), index=1)
+             self.axes = [self.x_axis, self.y_axis]
+         else:
+             data_shape = 'Data1D'
+             self.axes = [self.x_axis]
+ 
+         if data_shape != self.data_shape:
+             self.data_shape = data_shape
+             self.dte_signal_temp.emit(
+                 DataToExport(f'{self.user_id}',
+                              data=[DataFromPlugins(name=f'{self.user_id}',
+                                                    data=[np.squeeze(mock_data)],
+                                                    dim=self.data_shape,
+                                                    labels=[f'{self.user_id}_{self.data_shape}'],
+                                                    axes=self.axes)]))
+ 
+             QtWidgets.QApplication.processEvents()
 
     def close(self):
         """Terminate the communication protocol"""
@@ -384,8 +371,8 @@ class DAQ_2DViewer_DMK(DAQ_Viewer_base):
             self._prepare_view()
             if not self.controller.is_acquisition_active:
                 self.controller.acquisition_start()
-
-            self.callback_signal.emit()
+            
+            QtCore.QTimer.singleShot(10, self.callback_signal.emit)
 
         except Exception as e:
             self.emit_status(ThreadCommand('Update_Status', [str(e), "log"]))
@@ -395,12 +382,10 @@ class DAQ_2DViewer_DMK(DAQ_Viewer_base):
         try:
             frame = self.gui_data["frame"]
             if frame is not None:
-                width = self.settings.param('width').value()
-                height = self.settings.param('height').value()
                 self.dte_signal.emit(
                     DataToExport(f'{self.user_id}', data=[DataFromPlugins(
                         name=f'{self.user_id}',
-                        data=[np.squeeze(frame.reshape(height, width))],
+                        data=[np.squeeze(frame)],
                         dim=self.data_shape,
                         labels=[f'{self.user_id}_{self.data_shape}'],
                         axes=self.axes)]))
@@ -417,7 +402,7 @@ class DAQ_2DViewer_DMK(DAQ_Viewer_base):
         return ''
     
     def crosshair(self, crosshair_info, ind_viewer=0):
-        sleep_ms = 10
+        sleep_ms = 100
         ind = 0
 
         while not self.gui_data["ready"]:
@@ -443,23 +428,21 @@ class ListenerCallback(QtCore.QObject):
         return self.listener
 
     def wait_for_acquisition(self):
-        # You need to manually trigger frames_queued and pass the sink
         if self.listener.sink:
             self.listener.frames_queued(self.listener.sink)
         
         new_data = self.gui_data["frame"]
-        if new_data is not None:  # Check if new data is available
-            self.data_ready.emit()  # Emit signal when data is ready
+        if new_data is not None:
+            self.data_ready.emit()
 
 class Listener(ic4.QueueSinkListener):
     def __init__(self, gui_data, signal_emitter):
         super().__init__()
         self.gui_data = gui_data
         self.signal_emitter = signal_emitter
-        self.sink = None  # This will be populated later by QueueSink
+        self.sink = None
 
     def frames_queued(self, sink: ic4.QueueSink):
-        # Logic to handle frames once they are queued
         buffer = sink.try_pop_output_buffer()
         if buffer is not None:
             self.gui_data["frame"] = buffer.numpy_copy()
@@ -467,7 +450,7 @@ class Listener(ic4.QueueSinkListener):
             buffer.release()
 
     def sink_connected(self, sink: ic4.QueueSink, image_type: ic4.ImageType, min_buffers_required: int) -> bool:
-        self.sink = sink  # Save the sink reference when connected
+        self.sink = sink
         return True
 
     def sink_disconnected(self, sink: ic4.QueueSink):
