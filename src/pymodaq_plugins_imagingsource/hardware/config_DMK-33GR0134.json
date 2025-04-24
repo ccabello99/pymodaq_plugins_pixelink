@@ -1,0 +1,320 @@
+{
+    "TLParams Locked": {
+        "name": "TLParamsLocked"
+    },
+    "GPIO": {
+        "name": "GPIO"
+    },
+    "Strobe Operation": {
+        "name": "StrobeOperation"
+    },
+    "Strobe Polarity": {
+        "name": "StrobePolarity"
+    },
+    "Strobe Enable": {
+        "name": "StrobeEnable"
+    },
+    "GPIn": {
+        "name": "GPIn"
+    },
+    "GPOut": {
+        "name": "GPOut"
+    },
+    "Auto Functions ROIEnable": {
+        "name": "AutoFunctionsROIEnable"
+    },
+    "Auto Functions ROIPreset": {
+        "name": "AutoFunctionsROIPreset"
+    },
+    "Auto Functions ROILeft": {
+        "name": "AutoFunctionsROILeft"
+    },
+    "Auto Functions ROITop": {
+        "name": "AutoFunctionsROITop"
+    },
+    "Auto Functions ROIWidth": {
+        "name": "AutoFunctionsROIWidth"
+    },
+    "Auto Functions ROIHeight": {
+        "name": "AutoFunctionsROIHeight"
+    },
+    "Black Level": {
+        "name": "BlackLevel"
+    },
+    "Gain Auto Upper Limit": {
+        "name": "GainAutoUpperLimit"
+    },
+    "Gain Auto Lower Limit": {
+        "name": "GainAutoLowerLimit"
+    },
+    "Gain Auto": {
+        "name": "GainAuto"
+    },
+    "Gain": {
+        "name": "Gain"
+    },
+    "Gamma": {
+        "name": "Gamma"
+    },
+    "Sensor Width": {
+        "name": "SensorWidth"
+    },
+    "Binning Vertical": {
+        "name": "BinningVertical"
+    },
+    "Binning Horizontal": {
+        "name": "BinningHorizontal"
+    },
+    "Pixel Format": {
+        "name": "PixelFormat"
+    },
+    "Sensor Height": {
+        "name": "SensorHeight"
+    },
+    "Width Max": {
+        "name": "WidthMax"
+    },
+    "Height Max": {
+        "name": "HeightMax"
+    },
+    "Width": {
+        "name": "Width"
+    },
+    "Height": {
+        "name": "Height"
+    },
+    "Offset X": {
+        "name": "OffsetX"
+    },
+    "Offset Y": {
+        "name": "OffsetY"
+    },
+    "Offset Auto Center": {
+        "name": "OffsetAutoCenter"
+    },
+    "Chunk Image": {
+        "name": "ChunkImage"
+    },
+    "Chunk Mode Active": {
+        "name": "ChunkModeActive"
+    },
+    "Action Device Key": {
+        "name": "ActionDeviceKey"
+    },
+    "Action Selector": {
+        "name": "ActionSelector"
+    },
+    "Action Group Mask": {
+        "name": "ActionGroupMask"
+    },
+    "Action Group Key": {
+        "name": "ActionGroupKey"
+    },
+    "User Set Selector": {
+        "name": "UserSetSelector"
+    },
+    "User Set Load": {
+        "name": "UserSetLoad"
+    },
+    "User Set Save": {
+        "name": "UserSetSave"
+    },
+    "User Set Default": {
+        "name": "UserSetDefault"
+    },
+    "Device Type": {
+        "name": "DeviceType"
+    },
+    "Timestamp Latch Value": {
+        "name": "TimestampLatchValue"
+    },
+    "Timestamp Latch": {
+        "name": "TimestampLatch"
+    },
+    "Timestamp Reset": {
+        "name": "TimestampReset"
+    },
+    "Device Scan Type": {
+        "name": "DeviceScanType"
+    },
+    "Device Vendor Name": {
+        "name": "DeviceVendorName"
+    },
+    "Device Model Name": {
+        "name": "DeviceModelName"
+    },
+    "Device Version": {
+        "name": "DeviceVersion"
+    },
+    "Device Serial Number": {
+        "name": "DeviceSerialNumber"
+    },
+    "Device User ID": {
+        "name": "DeviceUserID"
+    },
+    "Device SFNCVersion Major": {
+        "name": "DeviceSFNCVersionMajor"
+    },
+    "Device SFNCVersion Minor": {
+        "name": "DeviceSFNCVersionMinor"
+    },
+    "Device SFNCVersion Sub Minor": {
+        "name": "DeviceSFNCVersionSubMinor"
+    },
+    "Device TLType": {
+        "name": "DeviceTLType"
+    },
+    "Device TLVersion Major": {
+        "name": "DeviceTLVersionMajor"
+    },
+    "Device TLVersion Minor": {
+        "name": "DeviceTLVersionMinor"
+    },
+    "Device TLVersion Sub Minor": {
+        "name": "DeviceTLVersionSubMinor"
+    },
+    "Device Link Selector": {
+        "name": "DeviceLinkSelector"
+    },
+    "Device Link Heartbeat Timeout": {
+        "name": "DeviceLinkHeartbeatTimeout"
+    },
+    "Device Stream Channel Count": {
+        "name": "DeviceStreamChannelCount"
+    },
+    "Device Stream Channel Selector": {
+        "name": "DeviceStreamChannelSelector"
+    },
+    "Device Stream Channel Type": {
+        "name": "DeviceStreamChannelType"
+    },
+    "Device Stream Channel Link": {
+        "name": "DeviceStreamChannelLink"
+    },
+    "Device Stream Channel Endianness": {
+        "name": "DeviceStreamChannelEndianness"
+    },
+    "Device Stream Channel Packet Size": {
+        "name": "DeviceStreamChannelPacketSize"
+    },
+    "Device Event Channel Count": {
+        "name": "DeviceEventChannelCount"
+    },
+    "Payload Size": {
+        "name": "PayloadSize"
+    },
+    "Gev SCPSPacket Size": {
+        "name": "GevSCPSPacketSize"
+    },
+    "Gev SCPSFire Test Packet": {
+        "name": "GevSCPSFireTestPacket"
+    },
+    "Gev SCPSDo Not Fragment": {
+        "name": "GevSCPSDoNotFragment"
+    },
+    "Acquisition Start": {
+        "name": "AcquisitionStart"
+    },
+    "Acquisition Burst Frame Count": {
+        "name": "AcquisitionBurstFrameCount"
+    },
+    "Trigger Denoise": {
+        "name": "TriggerDenoise"
+    },
+    "Trigger Mask": {
+        "name": "TriggerMask"
+    },
+    "Trigger Debouncer": {
+        "name": "TriggerDebouncer"
+    },
+    "Trigger Delay": {
+        "name": "TriggerDelay"
+    },
+    "Trigger Software": {
+        "name": "TriggerSoftware"
+    },
+    "Trigger Activation": {
+        "name": "TriggerActivation"
+    },
+    "Trigger Source": {
+        "name": "TriggerSource"
+    },
+    "Trigger Mode": {
+        "name": "TriggerMode"
+    },
+    "Trigger Selector": {
+        "name": "TriggerSelector"
+    },
+    "Exposure Auto Highligh Reduction": {
+        "name": "ExposureAutoHighlighReduction"
+    },
+    "Exposure Auto Upper Limit Auto": {
+        "name": "ExposureAutoUpperLimitAuto"
+    },
+    "Exposure Auto Upper Limit": {
+        "name": "ExposureAutoUpperLimit"
+    },
+    "Exposure Auto Lower Limit": {
+        "name": "ExposureAutoLowerLimit"
+    },
+    "Exposure Auto Reference": {
+        "name": "ExposureAutoReference"
+    },
+    "Brightness": {
+        "name": "Brightness"
+    },
+    "Exposure Auto": {
+        "name": "ExposureAuto"
+    },
+    "Exposure Time": {
+        "name": "ExposureTime"
+    },
+    "Acquisition Frame Rate": {
+        "name": "AcquisitionFrameRate"
+    },
+    "Acquisition Stop": {
+        "name": "AcquisitionStop"
+    },
+    "Acquisition Mode": {
+        "name": "AcquisitionMode"
+    },
+    "Software Transform Enable": {
+        "name": "SoftwareTransformEnable"
+    },
+    "Contrast": {
+        "name": "Contrast"
+    },
+    "Sharpness": {
+        "name": "Sharpness"
+    },
+    "Denoise": {
+        "name": "Denoise"
+    },
+    "Show Overlay": {
+        "name": "ShowOverlay"
+    },
+    "Tone Mapping Enable": {
+        "name": "ToneMappingEnable"
+    },
+    "Tone Mapping Intensity": {
+        "name": "ToneMappingIntensity"
+    },
+    "Tone Mapping Global Brightness": {
+        "name": "ToneMappingGlobalBrightness"
+    },
+    "Camera Register Address": {
+        "name": "CameraRegisterAddress"
+    },
+    "Camera Register Value": {
+        "name": "CameraRegisterValue"
+    },
+    "Camera Register Read": {
+        "name": "CameraRegisterRead"
+    },
+    "Camera Register Write": {
+        "name": "CameraRegisterWrite"
+    },
+    "Camera Register Address Space": {
+        "name": "CameraRegisterAddressSpace"
+    }
+}
