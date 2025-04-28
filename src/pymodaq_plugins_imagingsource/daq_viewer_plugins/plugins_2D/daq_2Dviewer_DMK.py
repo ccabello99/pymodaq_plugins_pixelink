@@ -67,10 +67,8 @@ class DAQ_2DViewer_DMK(DAQ_Viewer_base):
         self.data_shape = None
 
     def init_controller(self) -> ImagingSourceCamera:
-        # Define the camera controller.
-        # Use any argument necessary (serial_number, camera index, etc.) depending on the camera
 
-        # Init camera with currently selected user id name
+        # Init camera with currently selected user id name (will be a model_name at this point)
         self.user_id = self.settings.param('camera_list').value()
         self.emit_status(ThreadCommand('Update_Status', [f"Trying to connect to {self.user_id}", 'log']))
         devices, camera_list = self.get_camera_list(self.device_enum)
@@ -97,14 +95,6 @@ class DAQ_2DViewer_DMK(DAQ_Viewer_base):
         initialized: bool
             False if initialization failed otherwise True
         """
-
-        # Initialize the Imaging Source library if not already done
-        # This is done to avoid multiple initializations of the library
-        # which can cause issues with the camera operation
-        #if not DAQ_2DViewer_DMK.library_initialized:
-        #    ic4.Library.init(api_log_level=ic4.LogLevel.INFO, log_targets=ic4.LogTarget.STDERR)
-        #    DAQ_2DViewer_DMK.library_initialized = True
-
 
         self.ini_detector_init(old_controller=controller,
                                new_controller=self.init_controller())
@@ -354,15 +344,14 @@ class DAQ_2DViewer_DMK(DAQ_Viewer_base):
         self.settings.child('device_info','DeviceVersion').setValue(self.controller.device_info.version)
         self.settings.child('device_state', 'device_state_to_load').setValue(self.controller.default_device_state_path)
 
-
-        # Special case: if DeviceUserID exists, set camera_user_id
-        if 'DeviceUserID' in device_map:
+        # Special case
+        if 'DeviceUserID' in self.controller.attribute_names:
             try:
                 device_user_id = device_map.get_value_str('DeviceUserID')
                 self.settings.child('device_info', 'DeviceUserID').setValue(device_user_id)
                 self.user_id = device_user_id
             except Exception:
-                pass  # Fail quietly if the value cannot be read
+                pass
 
         for param in self.controller.attributes:
             param_type = param['type']
