@@ -16,28 +16,17 @@ from pymodaq_plugins_imagingsource.hardware.imagingsource import ImagingSourceCa
 from pymodaq.utils.parameter import Parameter
 from pymodaq.utils.data import Axis, DataFromPlugins, DataToExport
 from pymodaq.control_modules.viewer_utility_classes import main, DAQ_Viewer_base, comon_parameters
-from PyQt6.QtCore import pyqtSignal
 from qtpy import QtWidgets, QtCore
 
 
 class DAQ_2DViewer_DMK(DAQ_Viewer_base):
-    """ Instrument plugin class for a 2D viewer.
+    """ 
     
-    This object inherits all functionalities to communicate with PyMoDAQ’s DAQ_Viewer module through inheritance via
-    DAQ_Viewer_base. It makes a bridge between the DAQ_Viewer module and the Python wrapper of a particular instrument.
-
-    
-    * Tested with DMK 42BUC03/33GR0134 camera.
-    * PyMoDAQ version 5.0.2
+    * Tested with DMK 42BUC03/33GR0134 cameras.
+    * Tested on PyMoDAQ version >= 5.0.2
     * Tested on Windows 11
     * Installation instructions: For this camera, you need to install the Imaging Source drivers, 
                                  specifically "Device Driver for USB Cameras" and/or "Device Driver for GigE Cameras" in legacy software
-
-    Attributes:
-    -----------
-    controller: object
-        The particular object that allow the communication with the hardware, in general a python wrapper around the
-         hardware library.
 
     """
 
@@ -48,35 +37,21 @@ class DAQ_2DViewer_DMK(DAQ_Viewer_base):
 
     live_mode_available = True
 
-    devices = ic4.DeviceEnum.devices()
+
+    device_enum = ic4.DeviceEnum()
+    devices = device_enum.devices()
     camera_list = [device.model_name for device in devices]
+    
 
     params = comon_parameters + [
         {'title': 'Camera List:', 'name': 'camera_list', 'type': 'list', 'value': '', 'limits': camera_list},
-        {'title': 'Camera Identifiers', 'name': 'ID', 'type': 'group', 'children': [
-            {'title': 'Camera Model:', 'name': 'camera_model', 'type': 'str', 'value': '', 'readonly': True},
-            {'title': 'Camera Serial Number:', 'name': 'camera_serial', 'type': 'str', 'value': '', 'readonly': True},
-            {'title': 'Camera User ID:', 'name': 'camera_user_id', 'type': 'str', 'value': ''}
-        ]},  
         {'title': 'ROI', 'name': 'roi', 'type': 'group', 'children': [
             {'title': 'Update ROI', 'name': 'update_roi', 'type': 'bool_push', 'value': False, 'default': False},
             {'title': 'Clear ROI+Bin', 'name': 'clear_roi', 'type': 'bool_push', 'value': False, 'default': False},
             {'title': 'Binning', 'name': 'binning', 'type': 'list', 'limits': [1, 2], 'default': 1},
             {'title': 'Image Width', 'name': 'width', 'type': 'int', 'value': 1280, 'readonly': True},
             {'title': 'Image Height', 'name': 'height', 'type': 'int', 'value': 960, 'readonly': True},
-        ]},
-        {'title': 'Brightness', 'name': 'brightness', 'type': 'slide', 'value': 1.0, 'default': 1.0, 'limits': [0.0, 1.0]},
-        {'title': 'Contrast', 'name': 'contrast', 'type': 'slide', 'value': 1.0, 'default': 1.0, 'limits': [0.0, 1.0]},
-        {'title': 'Exposure', 'name': 'exposure', 'type': 'group', 'children': [
-            {'title': 'Auto Exposure', 'name': 'exposure_auto', 'type': 'led_push', 'value': "Off", 'default': "Off", 'limits': ['On', 'Off']},
-            {'title': 'Exposure Time (ms)', 'name': 'exposure_time', 'type': 'float', 'value': 100.0, 'default': 100.0, 'limits': [0.0, 1.0]}
-        ]},
-        {'title': 'Gain', 'name': 'gain', 'type': 'group', 'children': [
-            {'title': 'Auto Gain', 'name': 'gain_auto', 'type': 'led_push'},
-            {'title': 'Value', 'name': 'gain_value', 'type': 'slide', 'value': 1.0, 'default': 1.0, 'limits': [0.0, 1.0]}
-        ]},
-        {'title': 'Frame Rate', 'name': 'frame_rate', 'type': 'slide', 'value': 1.0, 'default': 1.0, 'limits': [0.0, 1.0]},
-        {'title': 'Gamma', 'name': 'gamma', 'type': 'slide', 'value': 1.0, 'default': 1.0, 'limits': [0.0, 1.0]}        
+        ]}
     ]
 
     def ini_attributes(self):
@@ -84,6 +59,7 @@ class DAQ_2DViewer_DMK(DAQ_Viewer_base):
 
         self.controller: None
         self.user_id = None
+        self.device_list_token = None
 
         self.x_axis = None
         self.y_axis = None
@@ -95,11 +71,9 @@ class DAQ_2DViewer_DMK(DAQ_Viewer_base):
         # Use any argument necessary (serial_number, camera index, etc.) depending on the camera
 
         # Init camera with currently selected user id name
-        list_param = self.settings.param('camera_list')
-        self.user_id = list_param.value()
+        self.user_id = self.settings.param('camera_list').value()
         self.emit_status(ThreadCommand('Update_Status', [f"Trying to connect to {self.user_id}", 'log']))
-        devices = ic4.DeviceEnum.devices()
-        camera_list = self.get_camera_list()
+        devices, camera_list = self.get_camera_list(self.device_enum)
         for cam in camera_list:
             if cam == self.user_id:
                 device_idx = camera_list.index(self.user_id)
@@ -135,75 +109,22 @@ class DAQ_2DViewer_DMK(DAQ_Viewer_base):
         self.ini_detector_init(old_controller=controller,
                                new_controller=self.init_controller())
 
-        # Get device properties and set pixel format to Mono8 (Mono16) depending on the camera model
-        map = self.controller.camera.device_property_map
-        if self.controller.model_name == 'DMK 42BUC03':
-            self.controller.camera.device_property_map.try_set_value(ic4.PropId.PIXEL_FORMAT, ic4.PixelFormat.Mono8)
-        elif self.controller.model_name == 'DMK 33GR0134':
-            self.controller.camera.device_property_map.try_set_value(ic4.PropId.PIXEL_FORMAT, ic4.PixelFormat.Mono16)
+        # Register device list changed callback
+        self.device_list_token = self.device_enum.event_add_device_list_changed(self.get_camera_list)
 
-        # Set param values for configuration based on camera in use (maybe compactify this later, but it's working..)
-        self.settings.child('ID','camera_model').setValue(self.controller.model_name)
-        self.settings.child('ID','camera_serial').setValue(self.controller.device_info.serial)
-        self.settings.child('ID', 'camera_user_id').setValue(self.user_id)
+        # Start all detectors in Mono8 pixel format
+        self.controller.camera.device_property_map.set_value('PixelFormat', 'Mono8')
 
         # Initialize the stream but defer acquisition start until we start grabbing
         self.controller.setup_acquisition()
 
-        if self.controller.model_name == 'DMK 33GR0134':
-            self.settings.child('ID','camera_user_id').setValue(map.get_value_str('DeviceUserID'))
-        elif self.controller.model_name == 'DMK 42BUC03':
-            self.settings.child('ID','camera_user_id').setValue(self.user_id)
-        try:
-            self.settings.param('brightness').setValue(map.get_value_float(self.controller.brightness))
-            self.settings.param('brightness').setDefault(map.get_value_float(self.controller.brightness))
-            self.settings.param('brightness').setLimits([map[self.controller.brightness].minimum, map[self.controller.brightness].maximum])
-        except ic4.IC4Exception:
-            pass
-        try:
-            self.settings.param('contrast').setValue(map.get_value_float(self.controller.contrast))
-            self.settings.param('contrast').setDefault(map.get_value_float(self.controller.contrast))
-            self.settings.param('contrast').setLimits([map[self.controller.contrast].minimum, map[self.controller.contrast].maximum])
-        except ic4.IC4Exception:
-            pass
-        try:
-            if self.controller.model_name == 'DMK 42BUC03':
-                self.settings.child('exposure', 'exposure_auto').setValue(map.get_value_bool(self.controller.exposure_auto))
-            elif self.controller.model_name == 'DMK 33GR0134':
-                self.settings.child('exposure', 'exposure_auto').setValue(map.get_value_bool(self.controller.exposure_auto))
-        except ic4.IC4Exception:
-            pass
-        try:
-            self.settings.child('exposure', 'exposure_time').setValue(map.get_value_float(self.controller.exposure_time) * 1e-3)
-            self.settings.child('exposure', 'exposure_time').setDefault(map.get_value_float(self.controller.exposure_time) * 1e-3)
-            self.settings.child('exposure', 'exposure_time').setLimits([map[self.controller.exposure_time].minimum  * 1e-3, map[self.controller.exposure_time].maximum  * 1e-3])
-        except ic4.IC4Exception:
-            pass
-        try:
-            if self.controller.model_name == 'DMK 42BUC03':
-                self.settings.child('gain', 'gain_auto').setValue(map.get_value_bool(self.controller.gain_auto))
-            elif self.controller.model_name == 'DMK 33GR0134':
-                self.settings.child('gain', 'gain_auto').setValue(map.get_value_bool(self.controller.gain_auto))
-        except ic4.IC4Exception:
-            pass
-        try:
-            self.settings.child('gain', 'gain_value').setValue(map.get_value_float(self.controller.gain_value))
-            self.settings.child('gain', 'gain_value').setDefault(map.get_value_float(self.controller.gain_value))
-            self.settings.child('gain', 'gain_value').setLimits([map[self.controller.gain_value].minimum, map[self.controller.gain_value].maximum])
-        except ic4.IC4Exception:
-            pass
-        try:
-            self.settings.param('frame_rate').setValue(map.get_value_float(self.controller.frame_rate))
-            self.settings.param('frame_rate').setDefault(map.get_value_float(self.controller.frame_rate))
-            self.settings.param('frame_rate').setLimits([map[self.controller.frame_rate].minimum, map[self.controller.frame_rate].maximum])
-        except ic4.IC4Exception:
-            pass
-        try:
-            self.settings.param('gamma').setValue(map.get_value_float(self.controller.gamma))
-            self.settings.param('gamma').setDefault(map.get_value_float(self.controller.gamma))
-            self.settings.param('gamma').setLimits([map[self.controller.gamma].minimum, map[self.controller.gamma].maximum])
-        except ic4.IC4Exception:
-            pass
+        # Update the UI with available and current camera parameters
+        existing_names = set(child.name() for child in self.settings.children())
+        for attr in self.controller.attributes:
+            if attr['name'] not in existing_names:
+                self.settings.addChild(attr)
+        self.update_params_ui()
+        
 
         self._prepare_view()
         info = "Initialized camera"
@@ -219,21 +140,44 @@ class DAQ_2DViewer_DMK(DAQ_Viewer_base):
         param: Parameter
             A given parameter (within detector_settings) whose value has been changed by the user
         """
-        if param.name() == "camera_list":
+        name = param.name()
+        value = param.value()
+
+        if name == "camera_list":
             if self.controller != None:
                 self.close()
             self.ini_detector()
-        elif param.name() == "camera_user_id":
+    
+        if name in self.controller.attribute_names:
             try:
-                if self.controller.model_name == 'DMK 33GR0134':
-                    self.controller.camera.device_property_map.set_value('DeviceUserID', param.value())
-                    self.user_id = param.value()
-                elif self.controller.model_name == 'DMK 42BUC03':
-                    self.user_id = param.value()
+                # Special cases
+                if name == 'ExposureTime':
+                    value *= 1e3
+                if name == "DeviceUserID":
+                    self.user_id = value
+                if name == "device_state_save":
+                    self.controller.camera.device_save_state_to_file(self.controller.default_device_state_path)
+                    return
+                if name == "device_state_load":
+                    filepath = self.settings.child('device_state', 'device_state_to_load').value()
+                    self.controller.camera.device_close()
+                    self.controller.camera.device_open_from_state_file(filepath)
+                    # Reinitialize what is needed
+                    self.controller.camera.device_property_map.set_value('PixelFormat', 'Mono8')
+                    self.controller.setup_acquisition()
+                    existing_names = set(child.name() for child in self.settings.children())
+                    for attr in self.controller.attributes:
+                        if attr['name'] not in existing_names:
+                            self.settings.addChild(attr)
+                    self.update_params_ui()
+                    return
+
+                self.controller.camera.device_property_map.set_value(name, value)
             except ic4.IC4Exception:
-                pass
-        elif param.name() == "update_roi":
-            if param.value():  # Switching on ROI
+                pass 
+
+        if name == "update_roi":
+            if value:  # Switching on ROI
 
                 # We handle ROI and binning separately for clarity
                 (old_x, _, old_y, _, xbin, ybin) = self.controller.get_roi()  # Get current binning
@@ -250,73 +194,29 @@ class DAQ_2DViewer_DMK(DAQ_Viewer_base):
                 new_roi = (new_x, new_width, xbin, new_y, new_height, ybin)
                 self.update_rois(new_roi)
                 param.setValue(False)
-        elif param.name() == 'binning':
+        elif name == 'binning':
             # We handle ROI and binning separately for clarity
             (x0, w, y0, h, *_) = self.controller.get_roi()  # Get current ROI
             xbin = self.settings.child('roi', 'binning').value()
             ybin = self.settings.child('roi', 'binning').value()
             new_roi = (x0, w, xbin, y0, h, ybin)
             self.update_rois(new_roi)
-        elif param.name() == "clear_roi":
-            if param.value():  # Switching on ROI
+        elif name == "clear_roi":
+            if value:  # Switching on ROI
                 wdet, hdet = self.controller.get_detector_size()
-                # self.settings.child('ROIselect', 'x0').setValue(0)
-                # self.settings.child('ROIselect', 'width').setValue(wdet)
                 self.settings.child('roi', 'binning').setValue(1)
-                #
-                # self.settings.child('ROIselect', 'y0').setValue(0)
-                # new_height = self.settings.child('ROIselect', 'height').setValue(hdet)
 
                 new_roi = (0, wdet, 1, 0, hdet, 1)
                 self.update_rois(new_roi)
                 param.setValue(False)
-        elif param.name() == "brightness":
-            try:
-                self.controller.camera.device_property_map.set_value(self.controller.brightness, param.value())
-            except ic4.IC4Exception:
-                pass
-        elif param.name() == "contrast":
-            try:
-                self.controller.camera.device_property_map.set_value(self.controller.brightness, param.value())
-            except ic4.IC4Exception:
-                pass
-        elif param.name() == "exposure_auto":
-            try:
-                self.controller.camera.device_property_map.set_value(self.controller.exposure_auto, param.value())
-            except ic4.IC4Exception:
-                pass
-        elif param.name() == "exposure_time":
-            try:
-                self.controller.camera.device_property_map.set_value(self.controller.exposure_time, param.value() * 1e3)
-            except ic4.IC4Exception:
-                pass
-        elif param.name() == "gain_auto":
-            try:
-                self.controller.camera.device_property_map.set_value(self.controller.gain_auto, param.value())
-            except ic4.IC4Exception:
-                pass
-        elif param.name() == "gain_value":
-            try:
-                self.controller.camera.device_property_map.set_value(self.controller.gain_value, param.value())
-            except ic4.IC4Exception:
-                pass
-        elif param.name() == "frame_rate":
-            try:
-                self.controller.camera.device_property_map.set_value(self.controller.frame_rate, param.value())
-            except ic4.IC4Exception:
-                pass
-        elif param.name() == "gamma":
-            try:
-                self.controller.camera.device_property_map.set_value(self.controller.gamma, param.value())
-            except ic4.IC4Exception:
-                pass
+
     
     def _prepare_view(self):
          """Preparing a data viewer by emitting temporary data. Typically, needs to be called whenever the
          ROIs are changed"""
  
-         width = self.controller.camera.device_property_map.get_value_int(ic4.PropId.WIDTH)
-         height = self.controller.camera.device_property_map.get_value_int(ic4.PropId.HEIGHT)
+         width = self.controller.camera.device_property_map.get_value_int('Width')
+         height = self.controller.camera.device_property_map.get_value_int('Height')
  
          self.settings.child('roi', 'width').setValue(width)
          self.settings.child('roi', 'height').setValue(height)
@@ -348,7 +248,6 @@ class DAQ_2DViewer_DMK(DAQ_Viewer_base):
     def update_rois(self, new_roi):
         (new_x, new_width, new_xbinning, new_y, new_height, new_ybinning) = new_roi
         if new_roi != self.controller.get_roi():
-            # self.controller.set_attribute_value("ROIs",[new_roi])
             self.controller.set_roi(hstart=new_x,
                                     hend=new_x + new_width,
                                     vstart=new_y,
@@ -358,14 +257,13 @@ class DAQ_2DViewer_DMK(DAQ_Viewer_base):
             self.emit_status(ThreadCommand('Update_Status', [f'Changed ROI: {new_roi}']))
             self.close()
             self.ini_detector()
-            # Finally, prepare view for displaying the new data
             self._prepare_view()
 
     def grab_data(self, Naverage: int = 1, live: bool = False, **kwargs) -> None:
         try:
             if live:
                 self._prepare_view()
-                self.controller.start_grabbing(frame_rate=self.settings.param('frame_rate').value())
+                self.controller.start_grabbing(frame_rate=self.settings.param('AcquisitionFrameRate').value())
             else:
                 self._prepare_view()
                 if not self.controller.camera.is_acquisition_active:
@@ -419,7 +317,13 @@ class DAQ_2DViewer_DMK(DAQ_Viewer_base):
     
     def close(self):
         """Terminate the communication protocol"""
+        # Remove device specific attributes from parameter tree
+        #self.settings.clearChildren()
+        self.controller.attributes = None
+        #self.settings.addChildren(self.params)
+
         self.controller.close()
+        self.device_enum.event_remove_device_list_changed(self.device_list_token)
 
         self.controller = None  # Garbage collect the controller
         self.status.initialized = False
@@ -432,14 +336,126 @@ class DAQ_2DViewer_DMK(DAQ_Viewer_base):
     
     def crosshair(self, crosshair_info, ind_viewer=0):
         sleep_ms = 150
+        self.crosshair_info = crosshair_info
         QtCore.QTimer.singleShot(sleep_ms, QtWidgets.QApplication.processEvents)
 
-    def get_camera_list(self):
-        devices = ic4.DeviceEnum.devices()
-        cameras = []
-        for dev in devices:
-            cameras.append(dev.model_name)
-        return cameras
+    def get_camera_list(self, device_enum: ic4.DeviceEnum):
+        devices = device_enum.devices()
+        camera_list = [device.model_name for device in devices]
+        self.settings.param('camera_list').setLimits(camera_list)
+        return devices, camera_list
+    
+    def update_params_ui(self):
+        device_map = self.controller.camera.device_property_map
+
+        # Common syntax for any camera model
+        self.settings.child('device_info','DeviceModelName').setValue(self.controller.model_name)
+        self.settings.child('device_info','DeviceSerialNumber').setValue(self.controller.device_info.serial)
+        self.settings.child('device_info','DeviceVersion').setValue(self.controller.device_info.version)
+        self.settings.child('device_state', 'device_state_to_load').setValue(self.controller.default_device_state_path)
+
+
+        # Special case: if DeviceUserID exists, set camera_user_id
+        if 'DeviceUserID' in device_map:
+            try:
+                device_user_id = device_map.get_value_str('DeviceUserID')
+                self.settings.child('device_info', 'DeviceUserID').setValue(device_user_id)
+                self.user_id = device_user_id
+            except Exception:
+                pass  # Fail quietly if the value cannot be read
+
+        for param in self.controller.attributes:
+            param_type = param['type']
+            param_name = param['name']
+            
+            # Already handled
+            if param_name == "device_info":
+                continue
+
+            if param_type == 'group':
+                # Recurse over children in groups
+                for child in param['children']:
+                    child_name = child['name']
+                    child_type = child['type']
+                    try:
+                        value = param['value']
+                    except Exception as e:
+                        continue
+
+                    try:
+                        if child_type in ['float', 'slide']:
+                            value = device_map.get_value_float(child_name)
+                        elif child_type == 'int':
+                            value = device_map.get_value_int(child_name)
+                        elif child_type == 'led_push':
+                            value = device_map.get_value_bool(child_name)
+                        elif child_type == 'str':
+                            value = device_map.get_value_str(child_name)                            
+                        else:
+                            continue  # Unsupported type, skip
+
+                        # Special case: if parameter is ExposureTime, convert to ms from us
+                        if child_name == 'ExposureTime':
+                            value *= 1e-3
+
+                        # Set the value
+                        self.settings.child(param_name, child_name).setValue(value)
+
+                        # Set limits if defined
+                        if 'limits' in child and child_type in ['float', 'slide', 'int'] and not child.get('readonly', False):
+                            try:
+                                min_limit = device_map[child_name].minimum
+                                max_limit = device_map[child_name].maximum
+
+                                if child_name == 'ExposureTime':
+                                    min_limit *= 1e-3
+                                    max_limit *= 1e-3
+
+                                self.settings.child(param_name, child_name).setLimits([min_limit, max_limit])
+                            except ic4.IC4Exception:
+                                pass
+
+                    except ic4.IC4Exception:
+                        pass
+            else:
+                try:
+                    value = param['value']
+                except Exception as e:
+                    continue
+
+                try:
+                    if param_type in ['float', 'slide']:
+                        value = device_map.get_value_float(param_name)
+                    elif param_type == 'int':
+                        value = device_map.get_value_int(param_name)
+                    elif param_type == 'led_push':
+                        value = device_map.get_value_bool(param_name)
+                    else:
+                        return  # Unsupported type, skip
+
+                    # Special case: if parameter is ExposureTime, convert to ms from us
+                    if param_name == 'ExposureTime':
+                        value *= 1e-3
+
+                    # Set the value
+                    self.settings.param(param_name).setValue(value)
+
+                    if 'limits' in param and param_type in ['float', 'slide', 'int'] and not param.get('readonly', False):
+                        try:
+                            min_limit = device_map[param_name].minimum
+                            max_limit = device_map[param_name].maximum
+
+                            if param_name == 'ExposureTime':
+                                min_limit *= 1e-3
+                                max_limit *= 1e-3
+
+                            self.settings.param(param_name).setLimits([min_limit, max_limit])
+
+                        except ic4.IC4Exception:
+                            pass
+
+                except ic4.IC4Exception:
+                    pass
 
 
 if __name__ == '__main__':

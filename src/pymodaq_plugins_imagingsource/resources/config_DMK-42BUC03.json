@@ -1,0 +1,58 @@
+{
+    "device_info": {
+        "title": "Device Info",
+        "name": "device_info", 
+        "type": "group",
+        "children": {
+            "DeviceModelName": {"title": "Device Model Name", "name": "DeviceModelName", "type": "str", "value": "", "readonly": true},
+            "DeviceVersion": {"title": "Device Version", "name": "DeviceVersion", "type": "str", "value": "", "readonly": true},
+            "DeviceSerialNumber": {"title": "Device Serial Number", "name": "DeviceSerialNumber", "type": "str", "value": "", "readonly": true}
+        }
+    },
+
+    "AcquisitionFrameRate": {"title": "Acquisition Frame Rate", "name": "AcquisitionFrameRate", "type": "slide", "value": 10.0, "default": 10.0, "limits": [1.0, 15.0]},
+
+    "exposure": {
+        "title": "Exposure Settings",
+        "name": "exposure", 
+        "type": "group",
+        "children": {
+            "Exposure_Auto": {"title": "Exposure Auto", "name": "Exposure_Auto", "type": "led_push", "default": false},
+            "ExposureTime": {"title": "Exposure Time (ms)", "name": "ExposureTime", "type": "float", "value": 100.0, "default": 100.0, "limits": [0.0, 10000.0]}
+        }
+    },
+
+    "gain": {
+        "title": "Gain Settings",
+        "name": "gain", 
+        "type": "group",
+        "children": {
+            "Gain_Auto": {"title": "Gain Auto", "name": "Gain_Auto", "type": "led_push", "default": false},
+            "Gain": {"title": "Gain Value", "name": "Gain", "type": "slide", "value": 1.0, "default": 1.0, "limits": [0.0, 2.0]}
+        }
+    },
+
+    "misc": {
+        "title": "Additional Settings",
+        "name": "misc", 
+        "type": "group",
+        "children": {
+            "Gamma": {"title": "Gamma", "name": "Gamma", "type": "slide", "value": 1.0, "default": 1.0, "limits": [0.0, 2.0]},
+            "PixelFormat": {"title": "Pixel Format", "name": "PixelFormat", "type": "str", "value": "Mono8", "readonly": true},
+            "Brightness": {"title": "Brightness", "name": "Brightness", "type": "slide", "value": 1.0, "default": 1.0, "limits": [0.0, 2.0]},
+            "Contrast": {"title": "Contrast", "name": "Contrast", "type": "slide", "value": 1.0, "default": 1.0, "limits": [0.0, 2.0]},
+            "Sharpness": {"title": "Sharpness", "name": "Sharpness", "type": "slide", "value": 1.0, "default": 1.0, "limits": [0.0, 10.0]}
+        }
+    },
+
+    "device_state": {
+        "title": "Device State",
+        "name": "device_state", 
+        "type": "group",
+        "children": {
+            "device_state_to_load": {"title": "Settings File", "name": "device_state_to_load", "type": "browsepath", "value": "", "filetype": true},
+            "device_state_load": {"title": "Load Device State ?", "name": "device_state_load", "type": "bool_push", "value": false},
+            "device_state_save": {"title": "Save Device State ?", "name": "device_state_save", "type": "bool_push", "value": false}
+        }
+    }
+}

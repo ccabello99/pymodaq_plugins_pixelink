@@ -48,16 +48,9 @@ class ImagingSourceCamera:
         self.model_name = info.model_name
         self.device_info = info
 
-        self.gain_value = None
-        self.gain_auto = None
-        self.exposure_time = None
-        self.exposure_auto = None
-        self.gamma = None
-        self.frame_rate = None
-        self.gevscpd = None
-
-        # register configuration event handler
-        self.configurationEventHandler = ConfigurationHandler()
+        # register device lost event handler
+        self.device_lost_token = self.camera.event_add_device_lost(self.camera_lost)
+        self.default_device_state_path = os.path.join(os.path.expanduser('~'), 'Downloads', f'{self.model_name}_settings.bin')
 
         # Callback setup for image grabbing
         self.listener = Listener()
@@ -72,6 +65,7 @@ class ImagingSourceCamera:
     def open(self) -> None:
         self.camera.device_open(self.device_info)
         self.get_attributes()
+        self.attribute_names = [attr['name'] for attr in self.attributes] + [child['name'] for attr in self.attributes if attr.get('type') == 'group' for child in attr.get('children', [])]
 
     def set_callback(
         self, callback: Callable[[NDArray], None], replace_all: bool = True
@@ -91,19 +85,11 @@ class ImagingSourceCamera:
     def get_attributes(self):
         """Get the attributes of the camera and store them in a dictionary."""
         model_name = self.model_name.replace(" ", "-")
-        script_dir = os.path.dirname(os.path.abspath(__file__))
+        script_dir = os.path.join("src", "pymodaq_plugins_imagingsource", "resources")
         file_path = os.path.join(script_dir, f'config_{model_name}.json')
         with open(file_path, 'r') as file:
-            self.attributes = json.load(file)
-            self.gain_value = self.attributes["Gain"]["name"]
-            self.gain_auto = self.attributes["Gain Auto"]["name"]
-            self.exposure_time = self.attributes["Exposure Time"]["name"]
-            self.exposure_auto = self.attributes["Exposure Auto"]["name"]
-            self.gamma = self.attributes["Gamma"]["name"]
-            self.frame_rate = self.attributes["Acquisition Frame Rate"]["name"]
-            self.brightness = self.attributes["Brightness"]["name"]
-            self.contrast = self.attributes["Contrast"]["name"]
-
+            attributes = json.load(file)
+            self.attributes = self.sanitize_device_attributes(attributes)
 
     def get_roi(self) -> Tuple[float, float, float, float, int, int]:
         """Return x0, width, y0, height, xbin, ybin."""
@@ -129,22 +115,57 @@ class ImagingSourceCamera:
 
     def get_detector_size(self) -> Tuple[int, int]:
         """Return width and height of detector in pixels."""
-        return self.camera.device_property_map['Width'].maximum, self.camera.device_property_map['Height'].maximum
-    
-    def clear_acquisition(self):
-        """Stop acquisition"""
-        pass
+        return self.camera.device_property_map['WidthMax'], self.camera.device_property_map['HeightMax']
 
     def setup_acquisition(self) -> None:
         self.camera.stream_setup(self.sink, setup_option=ic4.StreamSetupOption.DEFER_ACQUISITION_START)
 
     def close(self) -> None:
-        if self.camera.is_acquisition_active:
-            self.camera.acquisition_stop()
-        if self.camera.is_streaming:
-            self.camera.stream_stop()
-        self.camera.device_close()
+        try:
+            if self.camera.is_acquisition_active:
+                self.camera.acquisition_stop()
+        except ic4.IC4Exception as e:
+            print(f"Warning: Failed to stop acquisition cleanly: {e}")
+
+        try:
+            if self.camera.is_streaming:
+                self.camera.stream_stop()
+        except ic4.IC4Exception as e:
+            print(f"Warning: Failed to stop streaming cleanly: {e}")
+
+        try:
+            self.camera.device_close()
+        except ic4.IC4Exception as e:
+            print(f"Warning: Failed to close device cleanly: {e}")
+
+        try:
+            self.camera.event_remove_device_lost(self.device_lost_token)
+        except ic4.IC4Exception as e:
+            print(f"Warning: Failed to remove device lost handler: {e}")
+
         self._pixel_length = None
+
+    def save_device_state(self):
+        save_path = self.default_device_state_path
+        try:
+            self.camera.device_save_state_to_file(save_path)
+            print(f"Device state saved to {save_path}")
+        except ic4.IC4Exception as e:
+            print(f"Failed to save device state: {e}")
+
+    def load_device_state(self, load_path):
+        if os.path.isfile(load_path):
+            try:
+                self.camera.device_load_state_from_file(load_path)
+                print(f"Device state loaded from {load_path}")
+            except ic4.IC4Exception as e:
+                print(f"Failed to load device state: {e}")
+        else:
+            print("No saved settings file found to load.")
+
+    def camera_lost(self):
+        self.close()
+        print(f"Lost connection to {self.model_name}")
 
     def start_grabbing(self, frame_rate: int) -> None:
         """Start continuously to grab data.
@@ -174,29 +195,40 @@ class ImagingSourceCamera:
     def pixel_length(self, value):
         self._pixel_length = value
 
-class ConfigurationHandler:
-    """Handle the configuration events."""
+    def sanitize_device_attributes(self, attributes):
+        sanitized_params = []
 
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self.signals = self.ConfigurationHandlerSignals()
+        # Check if attributes is a list or dictionary
+        if isinstance(attributes, dict):
+            items = attributes.items()
+        elif isinstance(attributes, list):
+            # If it's a list, we assume each item is a parameter (no keys)
+            items = enumerate(attributes)  # Use index for 'key'
+        else:
+            raise ValueError(f"Unsupported type for attributes: {type(attributes)}")
 
-    class ConfigurationHandlerSignals(QtCore.QObject):
-        """Signals for the CameraEventHandler."""
+        for idx, attr in items:
+            param = {}
 
-        cameraRemoved = pyqtSignal(object)
+            param['title'] = attr.get('title', '')
+            param['name'] = attr.get('name', str(idx))  # use index if name is missing
+            param['type'] = attr.get('type', 'str')
+            param['value'] = attr.get('value', '')
+            param['default'] = attr.get('default', None)
+            param['limits'] = attr.get('limits', None)
+            param['readonly'] = attr.get('readonly', False)
 
-    def OnOpened(self, camera: ic4.Grabber) -> None:
-        """Standard configuration after being opened."""
-        #camera.PixelFormat.SetValue("Mono12")
-        #camera.GainAuto.SetValue("Off")
-        #camera.ExposureAuto.SetValue("Off")
-        pass
+            if param['type'] == 'group' and 'children' in attr:
+                children = attr['children']
+                # If children is a dict, convert to a list
+                if isinstance(children, dict):
+                    children = list(children.values())
+                param['children'] = self.sanitize_device_attributes(children)
 
-    def event_add_device_lost(handler: Callable[[ic4.Grabber], None]) -> ic4.Grabber.DeviceLostNotificationToken:
-        """Emit a signal that the camera is removed."""
-        #self.signals.cameraRemoved.emit(camera)
-        pass
+            sanitized_params.append(param)
+
+        return sanitized_params
+
 
 
 class Listener(ic4.QueueSinkListener):
