@@ -85,8 +85,7 @@ class ImagingSourceCamera:
     def get_attributes(self):
         """Get the attributes of the camera and store them in a dictionary."""
         model_name = self.model_name.replace(" ", "-")
-        script_dir = os.path.join("src", "pymodaq_plugins_imagingsource", "resources")
-        file_path = os.path.join(script_dir, f'config_{model_name}.json')
+        file_path = os.path.join(os.environ.get('PROGRAMDATA'), '.pymodaq', f'config_{model_name}.json')
         with open(file_path, 'r') as file:
             attributes = json.load(file)
             self.attributes = self.sanitize_device_attributes(attributes)
@@ -124,24 +123,24 @@ class ImagingSourceCamera:
         try:
             if self.camera.is_acquisition_active:
                 self.camera.acquisition_stop()
-        except ic4.IC4Exception as e:
-            print(f"Warning: Failed to stop acquisition cleanly: {e}")
+        except ic4.IC4Exception:
+            pass
 
         try:
             if self.camera.is_streaming:
                 self.camera.stream_stop()
-        except ic4.IC4Exception as e:
-            print(f"Warning: Failed to stop streaming cleanly: {e}")
+        except ic4.IC4Exception:
+            pass
 
         try:
             self.camera.device_close()
-        except ic4.IC4Exception as e:
-            print(f"Warning: Failed to close device cleanly: {e}")
+        except ic4.IC4Exception:
+            pass
 
         try:
             self.camera.event_remove_device_lost(self.device_lost_token)
-        except ic4.IC4Exception as e:
-            print(f"Warning: Failed to remove device lost handler: {e}")
+        except ic4.IC4Exception:
+            pass
 
         self._pixel_length = None
 
@@ -228,6 +227,7 @@ class ImagingSourceCamera:
             sanitized_params.append(param)
 
         return sanitized_params
+
 
 
 

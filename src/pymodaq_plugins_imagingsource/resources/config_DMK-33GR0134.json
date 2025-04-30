@@ -4,22 +4,22 @@
         "name": "device_info", 
         "type": "group",
         "children": {
-            "DeviceModelName": {"title": "Device Model Name", "name": "DeviceModelName", "type": "str", "value": "", "readonly": true},
-            "DeviceSerialNumber": {"title": "Device Serial Number", "name": "DeviceSerialNumber", "type": "str", "value": "", "readonly": true},
-            "DeviceVersion": {"title": "Device Version", "name": "DeviceVersion", "type": "str", "value": "", "readonly": true},
-            "DeviceUserID": {"title": "Device User ID", "name": "DeviceUserID", "type": "str", "value": ""}
+            "Device Model Name": {"title": "Device Model Name", "name": "DeviceModelName", "type": "str", "value": "", "readonly": true},
+            "Device Serial Number": {"title": "Device Serial Number", "name": "DeviceSerialNumber", "type": "str", "value": "", "readonly": true},
+            "Device Version": {"title": "Device Version", "name": "DeviceVersion", "type": "str", "value": "", "readonly": true},
+            "Device User ID": {"title": "Device User ID", "name": "DeviceUserID", "type": "str", "value": ""}
         }
     },
 
-    "AcquisitionFrameRate": {"title": "Acquisition Frame Rate", "name": "AcquisitionFrameRate", "type": "slide", "value": 15.0, "default": 15.0, "limits": [1.0, 15.0]},
+    "Acquisition Frame Rate": {"title": "Acquisition Frame Rate", "name": "AcquisitionFrameRate", "type": "slide", "value": 15.0, "default": 15.0, "limits": [1.0, 15.0]},
 
     "exposure": {
         "title": "Exposure Settings",
         "name": "exposure", 
         "type": "group",
         "children": {
-            "ExposureAuto": {"title": "Exposure Auto", "name": "ExposureAuto", "type": "led_push", "default": false},
-            "ExposureTime": {"title": "Exposure Time (ms)", "name": "ExposureTime", "type": "float", "value": 100.0, "default": 100.0, "limits": [0.0, 10000.0]}
+            "Exposure Auto": {"title": "Exposure Auto", "name": "ExposureAuto", "type": "led_push", "default": false},
+            "Exposure Time": {"title": "Exposure Time (ms)", "name": "ExposureTime", "type": "slide", "value": 100.0, "default": 100.0, "limits": [0.0, 10000.0]}
         }
     },
 
@@ -28,7 +28,7 @@
         "name": "gain", 
         "type": "group",
         "children": {
-            "GainAuto": {"title": "Gain Auto", "name": "GainAuto", "type": "led_push", "default": false},
+            "Gain Auto": {"title": "Gain Auto", "name": "GainAuto", "type": "led_push", "default": false},
             "Gain": {"title": "Gain Value", "name": "Gain", "type": "slide", "value": 1.0, "default": 1.0, "limits": [0.0, 2.0]}
         }
     },
@@ -39,8 +39,8 @@
         "type": "group",
         "children": {
             "Gamma": {"title": "Gamma", "name": "Gamma", "type": "slide", "value": 1.0, "default": 1.0, "limits": [0.0, 2.0]},
-            "PixelFormat": {"title": "Pixel Format", "name": "PixelFormat", "type": "list", "value": "Mono16", "limits": ["Mono8", "Mono16"]},
-            "GevSCPSPacketSize": {"title": "Gev SCPS Packet Size", "name": "GevSCPSPacketSize", "type": "int", "value": 1500},
+            "Pixel Format": {"title": "Pixel Format", "name": "PixelFormat", "type": "list", "value": "Mono16", "limits": ["Mono8", "Mono16"]},
+            "Gev SCPS Packet Size": {"title": "Gev SCPS Packet Size", "name": "GevSCPSPacketSize", "type": "int", "value": 1500},
             "Brightness": {"title": "Brightness", "name": "Brightness", "type": "slide", "value": 1.0, "default": 1.0, "limits": [0.0, 2.0]},
             "Contrast": {"title": "Contrast", "name": "Contrast", "type": "slide", "value": 1.0, "default": 1.0, "limits": [0.0, 2.0]},
             "Sharpness": {"title": "Sharpness", "name": "Sharpness", "type": "slide", "value": 1.0, "default": 1.0, "limits": [0.0, 10.0]}

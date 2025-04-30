@@ -1,5 +1,4 @@
 import numpy as np
-import time
 import imagingcontrol4 as ic4
 
 import warnings
@@ -8,11 +7,8 @@ import numpy as np
 warnings.filterwarnings("ignore", category=RuntimeWarning, module="numpy")
 
 
-from pymodaq.utils.daq_utils import (
-    ThreadCommand,
-    getLineInfo,
-)
-from pymodaq_plugins_imagingsource.hardware.imagingsource import ImagingSourceCamera, Listener
+from pymodaq.utils.daq_utils import ThreadCommand
+from pymodaq_plugins_imagingsource.hardware.imagingsource import ImagingSourceCamera
 from pymodaq.utils.parameter import Parameter
 from pymodaq.utils.data import Axis, DataFromPlugins, DataToExport
 from pymodaq.control_modules.viewer_utility_classes import main, DAQ_Viewer_base, comon_parameters
@@ -102,19 +98,19 @@ class DAQ_2DViewer_DMK(DAQ_Viewer_base):
         # Register device list changed callback
         self.device_list_token = self.device_enum.event_add_device_list_changed(self.get_camera_list)
 
-        # Start all detectors in Mono8 pixel format
+        # Initialize pixel format before starting stream to avoid default RGB types
         self.controller.camera.device_property_map.set_value('PixelFormat', 'Mono8')
+
+        # Update the UI with available and current camera parameters
+        self.update_params_ui()
+
+        # Ensure correct pixel format limits
+        misc_group = next(attr for attr in self.controller.attributes if attr['name'] == 'misc')
+        pixel_format_limits = next(child['limits'] for child in misc_group.get('children', []) if child['name'] == 'PixelFormat')
+        self.settings.child('misc', 'PixelFormat').setLimits(pixel_format_limits)
 
         # Initialize the stream but defer acquisition start until we start grabbing
         self.controller.setup_acquisition()
-
-        # Update the UI with available and current camera parameters
-        existing_names = set(child.name() for child in self.settings.children())
-        for attr in self.controller.attributes:
-            if attr['name'] not in existing_names:
-                self.settings.addChild(attr)
-        self.update_params_ui()
-        
 
         self._prepare_view()
         info = "Initialized camera"
@@ -155,12 +151,17 @@ class DAQ_2DViewer_DMK(DAQ_Viewer_base):
                     # Reinitialize what is needed
                     self.controller.camera.device_property_map.set_value('PixelFormat', 'Mono8')
                     self.controller.setup_acquisition()
-                    existing_names = set(child.name() for child in self.settings.children())
-                    for attr in self.controller.attributes:
-                        if attr['name'] not in existing_names:
-                            self.settings.addChild(attr)
                     self.update_params_ui()
                     return
+                if name == 'PixelFormat':
+                    if self.controller != None:
+                        self.controller.close()
+                    
+                    self.controller = self.init_controller()
+                    self.controller.camera.device_property_map.set_value(name, value)
+                    self.controller.setup_acquisition()
+                    print(f"Pixel format is now: {self.controller.camera.device_property_map.get_value_str(name)}. Restart live grab !")
+                    self._prepare_view()
 
                 self.controller.camera.device_property_map.set_value(name, value)
             except ic4.IC4Exception:
@@ -307,18 +308,14 @@ class DAQ_2DViewer_DMK(DAQ_Viewer_base):
     
     def close(self):
         """Terminate the communication protocol"""
-        # Remove device specific attributes from parameter tree
-        #self.settings.clearChildren()
         self.controller.attributes = None
-        #self.settings.addChildren(self.params)
-
         self.controller.close()
         self.device_enum.event_remove_device_list_changed(self.device_list_token)
 
         self.controller = None  # Garbage collect the controller
         self.status.initialized = False
         self.status.controller = None
-        self.status.info = ""           
+        self.status.info = ""
         print(f"{self.user_id} communication terminated successfully")   
     
     def roi_select(self, roi_info, ind_viewer):
@@ -337,6 +334,33 @@ class DAQ_2DViewer_DMK(DAQ_Viewer_base):
     
     def update_params_ui(self):
         device_map = self.controller.camera.device_property_map
+
+        existing_group_names = {child.name() for child in self.settings.children()}
+
+        for attr in self.controller.attributes:
+            attr_name = attr['name']
+            if attr.get('type') == 'group':
+                if attr_name not in existing_group_names:
+                    self.settings.addChild(attr)
+                else:
+                    group_param = self.settings.child(attr_name)
+
+                    existing_children = {child.name(): child for child in group_param.children()}
+
+                    expected_children = attr.get('children', [])
+                    for expected in expected_children:
+                        expected_name = expected['name']
+                        if expected_name not in existing_children:
+                            for old_name, old_child in existing_children.items():
+                                if old_child.opts.get('title') == expected.get('title') and old_name != expected_name:
+                                    print(old_name)
+                                    self.settings.child(attr_name, old_name).show(False)
+                                    break
+
+                            group_param.addChild(expected)
+            else:
+                if attr_name not in existing_group_names:
+                    self.settings.addChild(attr)
 
         # Common syntax for any camera model
         self.settings.child('device_info','DeviceModelName').setValue(self.controller.model_name)
