@@ -259,7 +259,9 @@ class DAQ_2DViewer_DMK(DAQ_Viewer_base):
                 self._prepare_view()
                 if not self.controller.camera.is_acquisition_active:
                     self.controller.camera.acquisition_start()
-                QtCore.QTimer.singleShot(50, self.emit_data)
+                while not self.controller.listener.frame_ready:
+                    QtCore.QThread.msleep(10)
+                self.emit_data()
                 if self.controller.camera.is_acquisition_active:
                     self.controller.camera.acquisition_stop()
         except Exception as e:
@@ -267,12 +269,6 @@ class DAQ_2DViewer_DMK(DAQ_Viewer_base):
 
             
     def emit_data(self):
-        """
-            Function used to emit data obtained by callback.
-            See Also
-            --------
-            daq_utils.ThreadCommand
-        """
         try:
             # Get data from buffer
             buffer = self.controller.sink.try_pop_output_buffer()
@@ -287,6 +283,7 @@ class DAQ_2DViewer_DMK(DAQ_Viewer_base):
                         dim=self.data_shape,
                         labels=[f'{self.user_id}_{self.data_shape}'],
                         axes=self.axes)]))
+                self.controller.listener.frame_ready = False
 
             QtWidgets.QApplication.processEvents()
 
@@ -301,6 +298,7 @@ class DAQ_2DViewer_DMK(DAQ_Viewer_base):
                 dim=self.data_shape,
                 labels=[f'{self.user_id}_{self.data_shape}'],
                 axes=self.axes)]))
+        self.controller.listener.frame_ready = False
 
     def stop(self):
         self.controller.camera.acquisition_stop()
