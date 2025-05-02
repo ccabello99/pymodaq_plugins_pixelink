@@ -353,7 +353,6 @@ class DAQ_2DViewer_DMK(DAQ_Viewer_base):
                         if expected_name not in existing_children:
                             for old_name, old_child in existing_children.items():
                                 if old_child.opts.get('title') == expected.get('title') and old_name != expected_name:
-                                    print(old_name)
                                     self.settings.child(attr_name, old_name).show(False)
                                     break
 
@@ -390,10 +389,6 @@ class DAQ_2DViewer_DMK(DAQ_Viewer_base):
                 for child in param['children']:
                     child_name = child['name']
                     child_type = child['type']
-                    try:
-                        value = param['value']
-                    except Exception as e:
-                        continue
 
                     try:
                         if child_type in ['float', 'slide']:
@@ -431,10 +426,6 @@ class DAQ_2DViewer_DMK(DAQ_Viewer_base):
                     except ic4.IC4Exception:
                         pass
             else:
-                try:
-                    value = param['value']
-                except Exception as e:
-                    continue
 
                 try:
                     if param_type in ['float', 'slide']:

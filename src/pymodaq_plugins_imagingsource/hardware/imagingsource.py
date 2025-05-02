@@ -7,24 +7,12 @@ import numpy as np
 from qtpy import QtCore
 import json
 import os
-from PyQt6.QtCore import pyqtSignal
 
 if not hasattr(QtCore, "pyqtSignal"):
     QtCore.pyqtSignal = QtCore.Signal  # type: ignore
 
 log = logging.getLogger(__name__)
 log.addHandler(logging.NullHandler())
-
-
-pixel_lengths: dict[str, float] = {
-    # camera model name: pixel length in µm
-    "daA1280-54um": 3.75,
-    "daA2500-14um": 2.2,
-    "daA3840-45um": 2,
-    "acA640-120gm": 5.6,
-    "acA645-100gm": 5.6,
-    "acA1920-40gm": 5.86,
-}
 
 
 class ImagingSourceCamera:
@@ -36,7 +24,6 @@ class ImagingSourceCamera:
     :param callback: Callback method for each grabbed image
     """
 
-    tlFactory: ic4.Library
     camera: ic4.Grabber
     sink: ic4.QueueSink
 
@@ -88,7 +75,7 @@ class ImagingSourceCamera:
         file_path = os.path.join(os.environ.get('PROGRAMDATA'), '.pymodaq', f'config_{model_name}.json')
         with open(file_path, 'r') as file:
             attributes = json.load(file)
-            self.attributes = self.sanitize_device_attributes(attributes)
+            self.attributes = self.clean_device_attributes(attributes)
 
     def get_roi(self) -> Tuple[float, float, float, float, int, int]:
         """Return x0, width, y0, height, xbin, ybin."""
@@ -177,25 +164,9 @@ class ImagingSourceCamera:
             pass
         self.camera.acquisition_start()
 
-    @property
-    def pixel_length(self) -> float:
-        """Get the pixel length of the camera in µm.
 
-        Returns None if the pixel length of the specific model is not known
-        """
-        if self._pixel_length is None:
-            try:
-                self._pixel_length = pixel_lengths[self.model_name]
-            except KeyError:
-                self._pixel_length = None
-        return self._pixel_length
-
-    @pixel_length.setter
-    def pixel_length(self, value):
-        self._pixel_length = value
-
-    def sanitize_device_attributes(self, attributes):
-        sanitized_params = []
+    def clean_device_attributes(self, attributes):
+        clean_params = []
 
         # Check if attributes is a list or dictionary
         if isinstance(attributes, dict):
@@ -222,11 +193,11 @@ class ImagingSourceCamera:
                 # If children is a dict, convert to a list
                 if isinstance(children, dict):
                     children = list(children.values())
-                param['children'] = self.sanitize_device_attributes(children)
+                param['children'] = self.clean_device_attributes(children)
 
-            sanitized_params.append(param)
+            clean_params.append(param)
 
-        return sanitized_params
+        return clean_params
 
 
 
@@ -254,9 +225,7 @@ class Listener(ic4.QueueSinkListener):
         pass
 
     class ListenerSignal(QtCore.QObject):
-        """Signals for the ImageEventHandler."""
-
-        data_ready = pyqtSignal(object)
+        data_ready = QtCore.pyqtSignal(object)
 
 
 def detector_clamp(value: Union[float, int], max_value: int) -> int:
