@@ -6,6 +6,10 @@ import numpy as np
 # Suppress only NumPy RuntimeWarnings (bc of crosshair bug)
 warnings.filterwarnings("ignore", category=RuntimeWarning, module="numpy")
 
+# Prevents COM initialization errors associated with ic4.Library.init() being called at the top of the class
+import pythoncom
+pythoncom.CoInitialize()
+
 
 from pymodaq.utils.daq_utils import ThreadCommand
 from pymodaq_plugins_imagingsource.hardware.imagingsource import ImagingSourceCamera
@@ -22,17 +26,16 @@ class DAQ_2DViewer_DMK(DAQ_Viewer_base):
     * Tested on PyMoDAQ version >= 5.0.2
     * Tested on Windows 11
     * Installation instructions: For this camera, you need to install the Imaging Source drivers, 
-                                 specifically "Device Driver for USB Cameras" and/or "Device Driver for GigE Cameras" in legacy software
+                                specifically "Device Driver for USB Cameras" and/or "Device Driver for GigE Cameras" in legacy software
 
     """
+
+    live_mode_available = True
 
     try:
         ic4.Library.init(api_log_level=ic4.LogLevel.INFO, log_targets=ic4.LogTarget.STDERR)
     except RuntimeError:
-        pass # library already initialized
-
-    live_mode_available = True
-
+        pass # Library already initialized
 
     device_enum = ic4.DeviceEnum()
     devices = device_enum.devices()
@@ -64,7 +67,7 @@ class DAQ_2DViewer_DMK(DAQ_Viewer_base):
 
     def init_controller(self) -> ImagingSourceCamera:
 
-        # Init camera with currently selected user id name (will be a model_name at this point)
+        # Init camera with first available camera (will be a model_name at this point)
         self.user_id = self.settings.param('camera_list').value()
         self.emit_status(ThreadCommand('Update_Status', [f"Trying to connect to {self.user_id}", 'log']))
         devices, camera_list = self.get_camera_list(self.device_enum)
@@ -93,7 +96,7 @@ class DAQ_2DViewer_DMK(DAQ_Viewer_base):
         """
 
         self.ini_detector_init(old_controller=controller,
-                               new_controller=self.init_controller())
+                            new_controller=self.init_controller())
 
         # Register device list changed callback
         self.device_list_token = self.device_enum.event_add_device_list_changed(self.get_camera_list)
@@ -203,38 +206,38 @@ class DAQ_2DViewer_DMK(DAQ_Viewer_base):
 
     
     def _prepare_view(self):
-         """Preparing a data viewer by emitting temporary data. Typically, needs to be called whenever the
-         ROIs are changed"""
- 
-         width = self.controller.camera.device_property_map.get_value_int('Width')
-         height = self.controller.camera.device_property_map.get_value_int('Height')
- 
-         self.settings.child('roi', 'width').setValue(width)
-         self.settings.child('roi', 'height').setValue(height)
- 
-         mock_data = np.zeros((width, height))
+        """Preparing a data viewer by emitting temporary data. Typically, needs to be called whenever the
+        ROIs are changed"""
 
-         self.x_axis = Axis(label='Pixels', data=np.linspace(1, width, width), index=0)
- 
-         if width != 1 and height != 1:
-             data_shape = 'Data2D'
-             self.y_axis = Axis(label='Pixels', data=np.linspace(1, height, height), index=1)
-             self.axes = [self.x_axis, self.y_axis]
-         else:
-             data_shape = 'Data1D'
-             self.axes = [self.x_axis]
- 
-         if data_shape != self.data_shape:
-             self.data_shape = data_shape
-             self.dte_signal_temp.emit(
-                 DataToExport(f'{self.user_id}',
-                              data=[DataFromPlugins(name=f'{self.user_id}',
+        width = self.controller.camera.device_property_map.get_value_int('Width')
+        height = self.controller.camera.device_property_map.get_value_int('Height')
+
+        self.settings.child('roi', 'width').setValue(width)
+        self.settings.child('roi', 'height').setValue(height)
+
+        mock_data = np.zeros((width, height))
+
+        self.x_axis = Axis(label='Pixels', data=np.linspace(1, width, width), index=0)
+
+        if width != 1 and height != 1:
+            data_shape = 'Data2D'
+            self.y_axis = Axis(label='Pixels', data=np.linspace(1, height, height), index=1)
+            self.axes = [self.x_axis, self.y_axis]
+        else:
+            data_shape = 'Data1D'
+            self.axes = [self.x_axis]
+
+        if data_shape != self.data_shape:
+            self.data_shape = data_shape
+            self.dte_signal_temp.emit(
+                DataToExport(f'{self.user_id}',
+                            data=[DataFromPlugins(name=f'{self.user_id}',
                                                     data=[np.squeeze(mock_data)],
                                                     dim=self.data_shape,
                                                     labels=[f'{self.user_id}_{self.data_shape}'],
                                                     axes=self.axes)]))
- 
-             QtWidgets.QApplication.processEvents()
+
+            QtWidgets.QApplication.processEvents()
 
     def update_rois(self, new_roi):
         (new_x, new_width, new_xbinning, new_y, new_height, new_ybinning) = new_roi
@@ -459,9 +462,5 @@ class DAQ_2DViewer_DMK(DAQ_Viewer_base):
                 except ic4.IC4Exception:
                     pass
 
-
 if __name__ == '__main__':
-    try:
-        main(__file__, init=False)
-    finally:
-        ic4.Library.exit()
+    main(__file__, init=False)
