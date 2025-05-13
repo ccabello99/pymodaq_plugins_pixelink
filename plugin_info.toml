@@ -1,10 +1,10 @@
 ## To modify by developer(s) of the plugin
 
 [plugin-info]
-SHORT_PLUGIN_NAME = 'imagingsource'
+SHORT_PLUGIN_NAME = 'pixelink'
 
-package-url = 'https://github.com/ccabello99/pymodaq_plugins_imagingsource' #to modify
-description = 'PyMoDAQ plugin for interfacing with Imaging Source cameras.'
+package-url = 'https://github.com/ccabello99/pymodaq_plugins_pixelink' #to modify
+description = 'PyMoDAQ plugin for interfacing with Pixelink cameras.'
 
 author = 'Christian Cabello'
 author-email = 'christian.cabello@ip-paris.fr'
@@ -12,7 +12,7 @@ license = 'MIT'
 
 [plugin-install]
 #packages required for your plugin:
-packages-required = ['pymodaq>=4.0.0', 'imagingcontrol4']
+packages-required = ['pymodaq>=4.0.0', 'pixelinkWrapper']
 
 [features]  # defines the plugin features contained into this plugin
 instruments = false  # true if plugin contains instrument classes (else false, notice the lowercase for toml files)

@@ -1,5 +1,5 @@
 import numpy as np
-import imagingcontrol4 as ic4
+from pixelinkWrapper import*
 
 import warnings
 import numpy as np
@@ -7,19 +7,19 @@ import numpy as np
 warnings.filterwarnings("ignore", category=RuntimeWarning, module="numpy")
 
 # Prevents COM initialization errors associated with ic4.Library.init() being called at the top of the class
-import pythoncom
-pythoncom.CoInitialize()
+#import pythoncom
+#pythoncom.CoInitialize()
 
 
 from pymodaq.utils.daq_utils import ThreadCommand
-from pymodaq_plugins_imagingsource.hardware.imagingsource import ImagingSourceCamera
+from pymodaq_plugins_pixelink.hardware.pixelink import PixelinkCamera, get_info_for_all_cameras
 from pymodaq.utils.parameter import Parameter
 from pymodaq.utils.data import Axis, DataFromPlugins, DataToExport
 from pymodaq.control_modules.viewer_utility_classes import main, DAQ_Viewer_base, comon_parameters
 from qtpy import QtWidgets, QtCore
 
 
-class DAQ_2DViewer_DMK(DAQ_Viewer_base):
+class DAQ_2DViewer_Pixelink(DAQ_Viewer_base):
     """ 
     
     * Tested with DMK 42BUC03/33GR0134 cameras.
@@ -32,24 +32,15 @@ class DAQ_2DViewer_DMK(DAQ_Viewer_base):
 
     live_mode_available = True
 
-    try:
-        ic4.Library.init(api_log_level=ic4.LogLevel.INFO, log_targets=ic4.LogTarget.STDERR)
-    except RuntimeError:
-        pass # Library already initialized
-
-    device_enum = ic4.DeviceEnum()
-    devices = device_enum.devices()
-    camera_list = [device.model_name for device in devices]
+    devices = get_info_for_all_cameras()
+    camera_list = [device["Name"] for device in devices]
     
 
     params = comon_parameters + [
         {'title': 'Camera List:', 'name': 'camera_list', 'type': 'list', 'value': '', 'limits': camera_list},
         {'title': 'ROI', 'name': 'roi', 'type': 'group', 'children': [
-            {'title': 'Update ROI', 'name': 'update_roi', 'type': 'bool_push', 'value': False, 'default': False},
-            {'title': 'Clear ROI+Bin', 'name': 'clear_roi', 'type': 'bool_push', 'value': False, 'default': False},
-            {'title': 'Binning', 'name': 'binning', 'type': 'list', 'limits': [1, 2], 'default': 1},
-            {'title': 'Image Width', 'name': 'width', 'type': 'int', 'value': 1280, 'readonly': True},
-            {'title': 'Image Height', 'name': 'height', 'type': 'int', 'value': 960, 'readonly': True},
+            {'title': 'Image Width', 'name': 'width', 'type': 'int', 'value': 1024, 'readonly': True},
+            {'title': 'Image Height', 'name': 'height', 'type': 'int', 'value': 768, 'readonly': True},
         ]}
     ]
 
@@ -65,17 +56,18 @@ class DAQ_2DViewer_DMK(DAQ_Viewer_base):
         self.axes = None
         self.data_shape = None
 
-    def init_controller(self) -> ImagingSourceCamera:
+    def init_controller(self) -> PixelinkCamera:
 
         # Init camera with first available camera (will be a model_name at this point)
         self.user_id = self.settings.param('camera_list').value()
         self.emit_status(ThreadCommand('Update_Status', [f"Trying to connect to {self.user_id}", 'log']))
-        devices, camera_list = self.get_camera_list(self.device_enum)
+        devices = get_info_for_all_cameras()
+        camera_list = [device["Name"] for device in devices]
         for cam in camera_list:
             if cam == self.user_id:
                 device_idx = camera_list.index(self.user_id)
                 device_info = devices[device_idx]
-                return ImagingSourceCamera(info=device_info, callback=self.emit_data_callback)
+                return PixelinkCamera(info=device_info, callback=self.emit_data_callback)
         self.emit_status(ThreadCommand('Update_Status', ["Camera not found", 'log']))
         raise ValueError(f"Camera with name {self.user_id} not found anymore.")
 
@@ -140,20 +132,18 @@ class DAQ_2DViewer_DMK(DAQ_Viewer_base):
         if name in self.controller.attribute_names:
             try:
                 # Special cases
-                if name == 'ExposureTime':
+                if name == 'SHUTTER':
                     value *= 1e3
-                if name == "DeviceUserID":
+                if name == "NAME":
                     self.user_id = value
                 if name == "device_state_save":
-                    self.controller.camera.device_save_state_to_file(self.controller.default_device_state_path)
+                    self.controller.save_device_state()
                     return
                 if name == "device_state_load":
-                    filepath = self.settings.child('device_state', 'device_state_to_load').value()
-                    self.controller.camera.device_close()
-                    self.controller.camera.device_open_from_state_file(filepath)
+                    self.controller.save_device_state()
                     # Reinitialize what is needed
                     self.controller.camera.device_property_map.set_value('PixelFormat', 'Mono8')
-                    self.controller.setup_acquisition()
+                    self.controller.start_acquisition()
                     self.update_params_ui()
                     return
                 if name == 'PixelFormat':
@@ -162,48 +152,13 @@ class DAQ_2DViewer_DMK(DAQ_Viewer_base):
                     
                     self.controller = self.init_controller()
                     self.controller.camera.device_property_map.set_value(name, value)
-                    self.controller.setup_acquisition()
+                    self.controller.start_acquisition()
                     print(f"Pixel format is now: {self.controller.camera.device_property_map.get_value_str(name)}. Restart live grab !")
                     self._prepare_view()
 
                 self.controller.camera.device_property_map.set_value(name, value)
-            except ic4.IC4Exception:
+            except Exception:
                 pass 
-
-        if name == "update_roi":
-            if value:  # Switching on ROI
-
-                # We handle ROI and binning separately for clarity
-                (old_x, _, old_y, _, xbin, ybin) = self.controller.get_roi()  # Get current binning
-
-                y0, x0 = self.roi_info.origin.coordinates
-                height, width = self.roi_info.size.coordinates
-
-                # Values need to be rescaled by binning factor and shifted by current x0,y0 to be correct.
-                new_x = (old_x + x0) * xbin
-                new_y = (old_y + y0) * xbin
-                new_width = width * ybin
-                new_height = height * ybin
-
-                new_roi = (new_x, new_width, xbin, new_y, new_height, ybin)
-                self.update_rois(new_roi)
-                param.setValue(False)
-        elif name == 'binning':
-            # We handle ROI and binning separately for clarity
-            (x0, w, y0, h, *_) = self.controller.get_roi()  # Get current ROI
-            xbin = self.settings.child('roi', 'binning').value()
-            ybin = self.settings.child('roi', 'binning').value()
-            new_roi = (x0, w, xbin, y0, h, ybin)
-            self.update_rois(new_roi)
-        elif name == "clear_roi":
-            if value:  # Switching on ROI
-                wdet, hdet = self.controller.get_detector_size()
-                self.settings.child('roi', 'binning').setValue(1)
-
-                new_roi = (0, wdet, 1, 0, hdet, 1)
-                self.update_rois(new_roi)
-                param.setValue(False)
-
     
     def _prepare_view(self):
         """Preparing a data viewer by emitting temporary data. Typically, needs to be called whenever the
@@ -239,59 +194,19 @@ class DAQ_2DViewer_DMK(DAQ_Viewer_base):
 
             QtWidgets.QApplication.processEvents()
 
-    def update_rois(self, new_roi):
-        (new_x, new_width, new_xbinning, new_y, new_height, new_ybinning) = new_roi
-        if new_roi != self.controller.get_roi():
-            self.controller.set_roi(hstart=new_x,
-                                    hend=new_x + new_width,
-                                    vstart=new_y,
-                                    vend=new_y + new_height,
-                                    hbin=new_xbinning,
-                                    vbin=new_ybinning)
-            self.emit_status(ThreadCommand('Update_Status', [f'Changed ROI: {new_roi}']))
-            self.close()
-            self.ini_detector()
-            self._prepare_view()
-
     def grab_data(self, Naverage: int = 1, live: bool = False, **kwargs) -> None:
         try:
+            self._prepare_view()
             if live:
-                self._prepare_view()
                 self.controller.start_grabbing(frame_rate=self.settings.param('AcquisitionFrameRate').value())
             else:
-                self._prepare_view()
-                if not self.controller.camera.is_acquisition_active:
-                    self.controller.camera.acquisition_start()
+                self.controller.start_acquisition()
                 while not self.controller.listener.frame_ready:
-                    QtCore.QThread.msleep(10)
-                self.emit_data()
-                if self.controller.camera.is_acquisition_active:
-                    self.controller.camera.acquisition_stop()
+                    pass
+                self.controller.stop_acquisition()
         except Exception as e:
             self.emit_status(ThreadCommand('Update_Status', [str(e), "log"]))
 
-            
-    def emit_data(self):
-        try:
-            # Get data from buffer
-            buffer = self.controller.sink.try_pop_output_buffer()
-            if buffer is not None:
-                frame = buffer.numpy_copy()
-                buffer.release()
-                # Emit the frame.
-                self.dte_signal.emit(
-                    DataToExport(f'{self.user_id}', data=[DataFromPlugins(
-                        name=f'{self.user_id}',
-                        data=[np.squeeze(frame)],
-                        dim=self.data_shape,
-                        labels=[f'{self.user_id}_{self.data_shape}'],
-                        axes=self.axes)]))
-                self.controller.listener.frame_ready = False
-
-            QtWidgets.QApplication.processEvents()
-
-        except Exception as e:
-            self.emit_status(ThreadCommand('Update_Status', [str(e), 'log']))
 
     def emit_data_callback(self, frame) -> None:
         self.dte_signal.emit(
@@ -311,7 +226,6 @@ class DAQ_2DViewer_DMK(DAQ_Viewer_base):
         """Terminate the communication protocol"""
         self.controller.attributes = None
         self.controller.close()
-        self.device_enum.event_remove_device_list_changed(self.device_list_token)
 
         self.controller = None  # Garbage collect the controller
         self.status.initialized = False
@@ -326,15 +240,10 @@ class DAQ_2DViewer_DMK(DAQ_Viewer_base):
         sleep_ms = 150
         self.crosshair_info = crosshair_info
         QtCore.QTimer.singleShot(sleep_ms, QtWidgets.QApplication.processEvents)
-
-    def get_camera_list(self, device_enum: ic4.DeviceEnum):
-        devices = device_enum.devices()
-        camera_list = [device.model_name for device in devices]
-        self.settings.param('camera_list').setLimits(camera_list)
-        return devices, camera_list
+        
     
     def update_params_ui(self):
-        device_map = self.controller.camera.device_property_map
+        feature_map = self.controller.build_feature_param_name_map(self.controller.camera)
 
         existing_group_names = {child.name() for child in self.settings.children()}
 
@@ -363,19 +272,10 @@ class DAQ_2DViewer_DMK(DAQ_Viewer_base):
                     self.settings.addChild(attr)
 
         # Common syntax for any camera model
-        self.settings.child('device_info','DeviceModelName').setValue(self.controller.model_name)
-        self.settings.child('device_info','DeviceSerialNumber').setValue(self.controller.device_info.serial)
-        self.settings.child('device_info','DeviceVersion').setValue(self.controller.device_info.version)
-        self.settings.child('device_state', 'device_state_to_load').setValue(self.controller.default_device_state_path)
-
-        # Special case
-        if 'DeviceUserID' in self.controller.attribute_names:
-            try:
-                device_user_id = device_map.get_value_str('DeviceUserID')
-                self.settings.child('device_info', 'DeviceUserID').setValue(device_user_id)
-                self.user_id = device_user_id
-            except Exception:
-                pass
+        self.settings.child('device_info','Name').setValue(self.controller.device_info["Name"])
+        self.settings.child('device_info','Model_Name').setValue(self.controller.device_info["Model Name"])
+        self.settings.child('device_info','Serial_Number').setValue(self.controller.device_info.serial)
+        self.settings.child('device_info','Firmware_Version').setValue(self.controller.device_info.version)
 
         for param in self.controller.attributes:
             param_type = param['type']
@@ -390,77 +290,73 @@ class DAQ_2DViewer_DMK(DAQ_Viewer_base):
                 for child in param['children']:
                     child_name = child['name']
                     child_type = child['type']
+                    
+                    # Get feature ID and parameter index
+                    feature_id = feature_map["GAIN"]["id"]
+                    param_index = feature_map["GAIN"]["params"]["VALUE"]
 
-                    try:
-                        if child_type in ['float', 'slide']:
-                            value = device_map.get_value_float(child_name)
-                        elif child_type == 'int':
-                            value = device_map.get_value_int(child_name)
-                        elif child_type == 'led_push':
-                            value = device_map.get_value_bool(child_name)
-                        elif child_type == 'str':
-                            value = device_map.get_value_str(child_name)                            
-                        else:
-                            continue  # Unsupported type, skip
+                    # Now use those for queries
+                    ret = PxLApi.getFeature(self.controller.camera, feature_id)
+                    if not PxLApi.apiSuccess(ret[0]):
+                        print("ERROR getting feature: {0}".format(ret[0]))
+                        print("Error message:", PxLApi.getErrorReport(ret[0])[1].strReport)
+                    value = ret[2][0]
 
-                        # Special case: if parameter is ExposureTime, convert to ms from us
-                        if child_name == 'ExposureTime':
-                            value *= 1e-3
+                    # Special case: if parameter is SHUTTER (exposure time), convert to ms from s
+                    if child_name == 'SHUTTER':
+                        value *= 1e3
 
-                        # Set the value
-                        self.settings.child(param_name, child_name).setValue(value)
-
-                        # Set limits if defined
-                        if 'limits' in child and child_type in ['float', 'slide', 'int'] and not child.get('readonly', False):
-                            try:
-                                min_limit = device_map[child_name].minimum
-                                max_limit = device_map[child_name].maximum
-
-                                if child_name == 'ExposureTime':
-                                    min_limit *= 1e-3
-                                    max_limit *= 1e-3
-
-                                self.settings.child(param_name, child_name).setLimits([min_limit, max_limit])
-                            except ic4.IC4Exception:
-                                pass
-
-                    except ic4.IC4Exception:
-                        pass
-            else:
-
-                try:
-                    if param_type in ['float', 'slide']:
-                        value = device_map.get_value_float(param_name)
-                    elif param_type == 'int':
-                        value = device_map.get_value_int(param_name)
-                    elif param_type == 'led_push':
-                        value = device_map.get_value_bool(param_name)
-                    else:
-                        return  # Unsupported type, skip
-
-                    # Special case: if parameter is ExposureTime, convert to ms from us
-                    if param_name == 'ExposureTime':
-                        value *= 1e-3
+                    # Special case: if parameter is SHUTTER_AUTO (auto exposure)
+                    if child_name == 'SHUTTER_AUTO':
+                        value = False
+                    if child_name == 'SHUTTER_AUTO_ONCE':
+                        value = False
 
                     # Set the value
-                    self.settings.param(param_name).setValue(value)
+                    self.settings.child(param_name, child_name).setValue(value)
 
-                    if 'limits' in param and param_type in ['float', 'slide', 'int'] and not param.get('readonly', False):
+                    # Set limits if defined
+                    if 'limits' in child and child_type in ['float', 'slide', 'int'] and not child.get('readonly', False):
                         try:
-                            min_limit = device_map[param_name].minimum
-                            max_limit = device_map[param_name].maximum
+                            ret = PxLApi.getCameraFeatures(self.controller.camera, feature_id)
+                            feature = ret[1].Features[0]
+                            min_limit = feature.Params[param_index].fMinValue
+                            max_limit = feature.Params[param_index].fMaxValue
 
-                            if param_name == 'ExposureTime':
-                                min_limit *= 1e-3
-                                max_limit *= 1e-3
+                            if child_name == 'ExposureTime':
+                                min_limit *= 1e3
+                                max_limit *= 1e3
 
-                            self.settings.param(param_name).setLimits([min_limit, max_limit])
-
-                        except ic4.IC4Exception:
+                            self.settings.child(param_name, child_name).setLimits([min_limit, max_limit])
+                        except Exception:
                             pass
+            else:
 
-                except ic4.IC4Exception:
-                    pass
+                # Get feature ID and parameter index
+                feature_id = feature_map["GAIN"]["id"]
+                param_index = feature_map["GAIN"]["params"]["VALUE"]
+
+                # Now use those for queries
+                ret = PxLApi.getFeature(self.controller.camera, feature_id)
+                if not PxLApi.apiSuccess(ret[0]):
+                    print("ERROR getting feature: {0}".format(ret[0]))
+                    print("Error message:", PxLApi.getErrorReport(ret[0])[1].strReport)
+                value = ret[2][0]
+
+                # Set the value
+                self.settings.param(param_name).setValue(value)
+
+                if 'limits' in param and param_type in ['float', 'slide', 'int'] and not param.get('readonly', False):
+                    try:
+                        ret = PxLApi.getCameraFeatures(self.controller.camera, feature_id)
+                        feature = ret[1].Features[0]
+                        min_limit = feature.Params[param_index].fMinValue
+                        max_limit = feature.Params[param_index].fMaxValue
+
+                        self.settings.param(param_name).setLimits([min_limit, max_limit])
+
+                    except Exception:
+                        pass
 
 if __name__ == '__main__':
     main(__file__, init=False)
