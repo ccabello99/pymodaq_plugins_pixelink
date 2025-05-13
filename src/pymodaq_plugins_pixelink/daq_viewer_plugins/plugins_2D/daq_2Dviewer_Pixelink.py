@@ -90,22 +90,19 @@ class DAQ_2DViewer_Pixelink(DAQ_Viewer_base):
         self.ini_detector_init(old_controller=controller,
                             new_controller=self.init_controller())
 
-        # Register device list changed callback
-        self.device_list_token = self.device_enum.event_add_device_list_changed(self.get_camera_list)
-
-        # Initialize pixel format before starting stream to avoid default RGB types
-        self.controller.camera.device_property_map.set_value('PixelFormat', 'Mono8')
+        # Initialize pixel format before starting stream
+        ret = PxLApi.setFeature(self.controller.camera, PxLApi.FeatureId.PIXEL_FORMAT, PxLApi.FeatureFlags.MANUAL, [0])
+        if not PxLApi.apiSuccess(ret[0]):
+            print("ERROR setting pixel format: {0}".format(ret[0]))
+            print("Error message:", PxLApi.getErrorReport(ret[0])[1].strReport)
 
         # Update the UI with available and current camera parameters
         self.update_params_ui()
 
         # Ensure correct pixel format limits
         misc_group = next(attr for attr in self.controller.attributes if attr['name'] == 'misc')
-        pixel_format_limits = next(child['limits'] for child in misc_group.get('children', []) if child['name'] == 'PixelFormat')
-        self.settings.child('misc', 'PixelFormat').setLimits(pixel_format_limits)
-
-        # Initialize the stream but defer acquisition start until we start grabbing
-        self.controller.setup_acquisition()
+        pixel_format_limits = next(child['limits'] for child in misc_group.get('children', []) if child['name'] == 'PIXEL_FORMAT')
+        self.settings.child('misc', 'PIXEL_FORMAT').setLimits(pixel_format_limits)
 
         self._prepare_view()
         info = "Initialized camera"
@@ -133,9 +130,10 @@ class DAQ_2DViewer_Pixelink(DAQ_Viewer_base):
             try:
                 # Special cases
                 if name == 'SHUTTER':
-                    value *= 1e3
+                    value *= 1e-3
                 if name == "NAME":
                     self.user_id = value
+                    PxLApi.setCameraName(self.controller.camera, value)
                 if name == "device_state_save":
                     self.controller.save_device_state()
                     return
@@ -146,7 +144,7 @@ class DAQ_2DViewer_Pixelink(DAQ_Viewer_base):
                     self.controller.start_acquisition()
                     self.update_params_ui()
                     return
-                if name == 'PixelFormat':
+                if name == 'PIXEL_FORMAT':
                     if self.controller != None:
                         self.controller.close()
                     
@@ -163,9 +161,10 @@ class DAQ_2DViewer_Pixelink(DAQ_Viewer_base):
     def _prepare_view(self):
         """Preparing a data viewer by emitting temporary data. Typically, needs to be called whenever the
         ROIs are changed"""
+        feature_id = self.controller.feature_map['ROI']['id']
 
-        width = self.controller.camera.device_property_map.get_value_int('Width')
-        height = self.controller.camera.device_property_map.get_value_int('Height')
+        width = int(PxLApi.getFeature(self.controller.camera, feature_id)[2][2])
+        height = int(PxLApi.getFeature(self.controller.camera, feature_id)[2][3])
 
         self.settings.child('roi', 'width').setValue(width)
         self.settings.child('roi', 'height').setValue(height)
@@ -198,7 +197,7 @@ class DAQ_2DViewer_Pixelink(DAQ_Viewer_base):
         try:
             self._prepare_view()
             if live:
-                self.controller.start_grabbing(frame_rate=self.settings.param('AcquisitionFrameRate').value())
+                self.controller.start_grabbing(frame_rate=self.settings.param('FRAME_RATE').value())
             else:
                 self.controller.start_acquisition()
                 while not self.controller.listener.frame_ready:
@@ -219,7 +218,7 @@ class DAQ_2DViewer_Pixelink(DAQ_Viewer_base):
         self.controller.listener.frame_ready = False
 
     def stop(self):
-        self.controller.camera.acquisition_stop()
+        self.controller.stop_acquisition()
         return ''
     
     def close(self):
@@ -243,7 +242,6 @@ class DAQ_2DViewer_Pixelink(DAQ_Viewer_base):
         
     
     def update_params_ui(self):
-        feature_map = self.controller.build_feature_param_name_map(self.controller.camera)
 
         existing_group_names = {child.name() for child in self.settings.children()}
 
@@ -274,8 +272,8 @@ class DAQ_2DViewer_Pixelink(DAQ_Viewer_base):
         # Common syntax for any camera model
         self.settings.child('device_info','Name').setValue(self.controller.device_info["Name"])
         self.settings.child('device_info','Model_Name').setValue(self.controller.device_info["Model Name"])
-        self.settings.child('device_info','Serial_Number').setValue(self.controller.device_info.serial)
-        self.settings.child('device_info','Firmware_Version').setValue(self.controller.device_info.version)
+        self.settings.child('device_info','Serial_Number').setValue(self.controller.device_info["Serial Number"])
+        self.settings.child('device_info','Firmware_Version').setValue(self.controller.device_info["Firmware Version"])
 
         for param in self.controller.attributes:
             param_type = param['type']
@@ -284,7 +282,9 @@ class DAQ_2DViewer_Pixelink(DAQ_Viewer_base):
             # Already handled
             if param_name == "device_info":
                 continue
-
+            # Skip this one
+            if param_name == "device_state":
+                continue
             if param_type == 'group':
                 # Recurse over children in groups
                 for child in param['children']:
@@ -292,8 +292,8 @@ class DAQ_2DViewer_Pixelink(DAQ_Viewer_base):
                     child_type = child['type']
                     
                     # Get feature ID and parameter index
-                    feature_id = feature_map["GAIN"]["id"]
-                    param_index = feature_map["GAIN"]["params"]["VALUE"]
+                    feature_id = self.controller.feature_map[child_name]["id"]
+                    param_index = self.controller.feature_map[child_name]["params"]["VALUE"]
 
                     # Now use those for queries
                     ret = PxLApi.getFeature(self.controller.camera, feature_id)
@@ -312,6 +312,9 @@ class DAQ_2DViewer_Pixelink(DAQ_Viewer_base):
                     if child_name == 'SHUTTER_AUTO_ONCE':
                         value = False
 
+                    # Special case: if parameter is Pixel Format, convert int to string:
+
+
                     # Set the value
                     self.settings.child(param_name, child_name).setValue(value)
 
@@ -323,7 +326,7 @@ class DAQ_2DViewer_Pixelink(DAQ_Viewer_base):
                             min_limit = feature.Params[param_index].fMinValue
                             max_limit = feature.Params[param_index].fMaxValue
 
-                            if child_name == 'ExposureTime':
+                            if child_name == 'SHUTTER':
                                 min_limit *= 1e3
                                 max_limit *= 1e3
 
@@ -333,8 +336,8 @@ class DAQ_2DViewer_Pixelink(DAQ_Viewer_base):
             else:
 
                 # Get feature ID and parameter index
-                feature_id = feature_map["GAIN"]["id"]
-                param_index = feature_map["GAIN"]["params"]["VALUE"]
+                feature_id = self.controller.feature_map[param_name]["id"]
+                param_index = self.controller.feature_map[param_name]["params"]["VALUE"]
 
                 # Now use those for queries
                 ret = PxLApi.getFeature(self.controller.camera, feature_id)

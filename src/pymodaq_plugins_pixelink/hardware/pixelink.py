@@ -27,8 +27,10 @@ class PixelinkCamera:
     :param callback: Callback method for each grabbed image
     """
 
-    #camera: ic4.Grabber
-    #sink: ic4.QueueSink
+    # One-time operation states
+    INACTIVE = 1    # A one-time operation is NOT in progress
+    INPROGRESS = 2  # A one-time operation IS in progress
+    STOPPING = 3    # A one-time operation IS in progress, but an abort request has been made.
 
     def __init__(self, info: str, callback: Optional[Callable] = None, **kwargs):
         super().__init__(**kwargs)
@@ -39,18 +41,20 @@ class PixelinkCamera:
         self.open()
 
         # register device lost event handler
-        ret = PxLApi.setEventCallback(self.camera, PxLApi.EventId.CAMERA_DISCONNECTED, self.name, self.camera_lost)
-        if not PxLApi.apiSuccess(ret[0]):
-            print("ERROR setting event callback function: {0}".format(ret[0]))
-            print("Error message:", PxLApi.getErrorReport(ret[0])[1].strReport)
+        #ret = PxLApi.setEventCallback(self.camera, PxLApi.EventId.CAMERA_DISCONNECTED, self.name, camera_lost)
+        #if not PxLApi.apiSuccess(ret[0]):
+        #    print("ERROR setting event callback function: {0}".format(ret[0]))
+        #    print("Error message:", PxLApi.getErrorReport(ret[0])[1].strReport)
 
         # Callback setup for image grabbing
         self.listener = Listener()
-        self.previewState = PxLApi.PreviewState.STOP
-        ret = PxLApi.setCallback(self.camera, PxLApi.Callback.FRAME, self.name, self.listener.callback)
+        ret = PxLApi.setCallback(self.camera, PxLApi.Callback.FRAME, self.listener._user_data, self.listener._callback_func)
         if not PxLApi.apiSuccess(ret[0]):
             print("ERROR setting frame callback function: {0}".format(ret[0]))
             print("Error message:", PxLApi.getErrorReport(ret[0])[1].strReport)
+
+        # Initialize feature map with current values
+        self.feature_map = self.build_feature_param_name_map()
         
         if callback is not None:
             self.set_callback(callback=callback)
@@ -103,14 +107,14 @@ class PixelinkCamera:
             print("Error message:", PxLApi.getErrorReport(ret[0])[1].strReport)
 
     def close(self) -> None:
-        ret = PxLApi.setCallback(self.camera, PxLApi.Callback.FRAME, self.name, 0)
+        ret = PxLApi.setCallback(self.camera, PxLApi.Callback.FRAME, self.listener._user_data, 0)
         if not PxLApi.apiSuccess(ret[0]):
             print("ERROR disabling frame callback function: {0}".format(ret[0]))
             print("Error message:", PxLApi.getErrorReport(ret[0])[1].strReport)
-        ret = PxLApi.setEventCallback(self.camera, PxLApi.EventId.ANY, self.name, 0)
-        if not PxLApi.apiSuccess(ret[0]):
-            print("ERROR disabling event callback function: {0}".format(ret[0]))
-            print("Error message:", PxLApi.getErrorReport(ret[0])[1].strReport)
+        #ret = PxLApi.setEventCallback(self.camera, PxLApi.EventId.ANY, self.name, 0)
+        #if not PxLApi.apiSuccess(ret[0]):
+        #    print("ERROR disabling event callback function: {0}".format(ret[0]))
+        #    print("Error message:", PxLApi.getErrorReport(ret[0])[1].strReport)
         ret = PxLApi.setStreamState(self.camera, PxLApi.PreviewState.STOP)
         if not PxLApi.apiSuccess(ret[0]):
             print("ERROR setting preview state function: {0}".format(ret[0]))
@@ -136,10 +140,6 @@ class PixelinkCamera:
             print("ERROR loading device state from non-volatile memory: {0}".format(ret[0]))
             print("Error message:", PxLApi.getErrorReport(ret[0])[1].strReport)
 
-    def camera_lost(self):
-        self.close()
-        print(f"Lost connection to {self.name}")
-
     def start_grabbing(self, frame_rate: int) -> None:
         """Start continuously to grab data.
 
@@ -150,10 +150,7 @@ class PixelinkCamera:
             pass
         except Exception:
             pass
-        ret = PxLApi.setStreamState(self.camera, PxLApi.StreamState.START)
-        if not PxLApi.apiSuccess(ret[0]):
-            print("ERROR setting stream state function: {0}".format(ret[0]))
-            print("Error message:", PxLApi.getErrorReport(ret[0])[1].strReport)
+        self.start_acquisition()
 
     def build_feature_param_name_map(self):
         feature_param_name_map = {}
@@ -197,11 +194,32 @@ class PixelinkCamera:
                     f"PARAM_{idx}": idx for idx in range(num_params)
                 }
 
+            # Manually add entries for auto exposure continuously and once
+            if feature_name == "SHUTTER":
+                feature_param_name_map["SHUTTER_AUTO"] = {
+                    "id": feature_id,
+                    "params": {
+                        "VALUE": 0,
+                        "AUTO_MIN": 1,
+                        "AUTO_MAX": 2
+                        }
+                }
+                feature_param_name_map["SHUTTER_AUTO_ONCE"] = {
+                    "id": feature_id,
+                    "params": {
+                        "VALUE": 0,
+                        "AUTO_MIN": 1,
+                        "AUTO_MAX": 2
+                        }
+                }
+
             # Add structured entry
             feature_param_name_map[feature_name] = {
                 "id": feature_id,
                 "params": param_map
             }
+        
+
 
         return feature_param_name_map
 
@@ -239,49 +257,141 @@ class PixelinkCamera:
             clean_params.append(param)
 
         return clean_params
+    
+    """
+    Create a new one-time autoexposure thread
+    """
+    def create_autoexposure_thread(self):
+        return threading.Thread(target=self.perform_one_time_autoexposure, args=(self.camera,), daemon=True)
 
-class Listener():
+    """
+    One-time autoexposure thread function to perform a one-time autoexposure operation, ending when the operation is complete, 
+    or until told to abort.
+    """
+    def perform_one_time_autoexposure(self):
+
+        global oneTimeAutoExposure
+        oneTimeAutoExposure = self.INPROGRESS
+        print("\n\nStarting one-time autoexposure adjustment.")
+
+        exposure = 0 # Intialize exposure to 0, but this value is ignored when initating auto adjustment.
+        params = [exposure] 
+
+        ret = PxLApi.setFeature(self.camera, PxLApi.FeatureId.EXPOSURE, PxLApi.FeatureFlags.ONEPUSH, params)
+        if not(PxLApi.apiSuccess(ret[0])):
+            print("!! Attempt to set one-time autoexposure returned %i!" % ret[0])
+            oneTimeAutoExposure == self.INACTIVE
+            return
+
+        # Now that we have initiated a one-time operation, loop until it is done (or told to abort).
+        while oneTimeAutoExposure == self.INPROGRESS:
+            ret = PxLApi.getFeature(self.camera, PxLApi.FeatureId.EXPOSURE)
+            if PxLApi.apiSuccess(ret[0]):
+                flags = ret[1]
+                params = ret[2]
+                if not (flags & PxLApi.FeatureFlags.ONEPUSH): # the operation completed
+                    break
+            QtCore.QThread.msleep(20) # Give some time for the one-time operation to complete
+
+        if oneTimeAutoExposure == self.STOPPING:
+            ret = PxLApi.setFeature(self.camera, PxLApi.FeatureId.EXPOSURE, PxLApi.FeatureFlags.MANUAL, params)
+            if not(PxLApi.apiSuccess(ret[0])):
+                print("!! Attempt to aborted one-time autoexposure returned %i!\n"
+                    "It will be aborted when it is completed by the camera." % (ret[0]))
+                oneTimeAutoExposure == self.INACTIVE
+                return
+            print("\nFinished one-time autoexposure adjustment. Operation aborted.\n")
+        else:
+            print("\nFinished one-time autoexposure adjustment. Operation completed successfully.\n")
+
+        oneTimeAutoExposure = self.INACTIVE
+
+        return
+
+    """
+    If a one-time autoexposure is not already in progress, starts a thread that will perfrom the
+    one-time autoexposure, exiting when it has completed (or is aborted).
+    """
+    def initiate_one_time_autoexposure(self):
+        
+        global oneTimeAutoExposure
+        if oneTimeAutoExposure == self.INACTIVE:
+            oneTimeThread = None
+            oneTimeThread = self.create_autoexposure_thread(self.camera)
+            if None == oneTimeThread:
+                print("  !! Could not create a one-time autoexposure thread!")
+            else:
+                oneTimeThread.start()
+        return
+    
+    """
+    Controls continuous autoexposure
+    """
+    def set_continuous_autoexposure(self, on):
+
+        exposure = 0 # Intialize exposure to 0, but this value is ignored when initating auto adjustment.
+        params = [exposure]
+
+        if not on:
+            # We are looking to turn off the continual auto exposure, which means we will be manually
+            # adjusting it from now on -- including with the below PxLApi.setFeature. So given that we have to
+            # set it to someting, read the current value (as set by the camera), and use that value.
+            ret = PxLApi.getFeature(self.camera, PxLApi.FeatureId.EXPOSURE)
+            if not PxLApi.apiSuccess(ret[0]):
+                print("!! Attempt to get exposure returned %i!" % ret[0])
+                return
+            params = ret[2]
+            flags = PxLApi.FeatureFlags.MANUAL
+        else:
+            flags = PxLApi.FeatureFlags.AUTO
+
+        ret = PxLApi.setFeature(self.camera, PxLApi.FeatureId.EXPOSURE, flags, params)
+        if not PxLApi.apiSuccess(ret[0]):
+            print("!! Attempt to set continuous autoexposure returned %i!" % ret[0])
+            return
+
+class Listener:
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.signals = self.ListenerSignal()
         self.frame_ready = False
 
-    """
-    Creates a NumPy 2D array representation of a byte pointer used the the Pixelink API.
-        frameData: Byte pointer to the image provided by the Pixelink API
-        width:     Width of the image (in pixels)
-        height:    Height of the image (in pixels)
-        bytesPerPixel: the number of bytes per pixel
-    """ 
-    def numPy_image (self, frameData, width, height, bytesPerPixel):
-        buffer_from_memory = pythonapi.PyMemoryView_FromMemory
-        buffer_from_memory.restype = py_object
-        pBuffer = buffer_from_memory(frameData, width * height * bytesPerPixel, 0x200) # 0x200 == writable
-        return np.frombuffer(pBuffer, np.uint8).reshape(height, width * bytesPerPixel)
+        # Store function pointer for use with API
+        # IMPORTANT: Access it only after class definition
+        self._callback_func = self.frame_callback
+        # IMPORTANT: Must pass a ctypes.c_void_p to setCallback, but you need to point it to a py_object, not to the pointer to that py_object
+        self._user_data_obj = ctypes.py_object(self)
+        self._user_data = ctypes.cast(ctypes.pointer(self._user_data_obj), ctypes.c_void_p)
     
-    """
-    Callback function called by the API just before an image is displayed in the preview window. 
-        N.B. This is called by the API on a thread created in the API.
-    """
+    @staticmethod
     @PxLApi._dataProcessFunction
-    def callback(self, hCamera, frameData, dataFormat, frameDesc, userData):
+    def frame_callback(hCamera, frameData, dataFormat, frameDesc, userData):
 
-        # Copy frame descriptor information
+        # IMPORTANT: Must cast from void* to POINTER(py_object), then dereference
+        self = ctypes.cast(userData, ctypes.POINTER(ctypes.py_object)).contents.value
+
         frameDescriptor = frameDesc.contents
-        # Find image dimensions
         width = int(frameDescriptor.Roi.fWidth / frameDescriptor.PixelAddressingValue.fHorizontal)
         height = int(frameDescriptor.Roi.fHeight / frameDescriptor.PixelAddressingValue.fVertical)
         bytesPerPixel = PxLApi.getBytesPerPixel(dataFormat)
 
-        # Recast the returned image as a NumPy 2-Darray, that we can modify
-        npFrame = self.numPy_image (frameData, width, height, bytesPerPixel)
-
+        # Emit signal safely
+        npFrame = self.numPy_image(frameData, width, height, bytesPerPixel)
         if npFrame is not None:
             self.signals.data_ready.emit(npFrame)
             self.frame_ready = True
 
         return 0
+    
+    @staticmethod
+    def numPy_image(frameData, width, height, bytesPerPixel):
+        size = width * height * bytesPerPixel
+        # Cast frameData to a ctypes array and copy into NumPy array
+        buf_type = ctypes.c_ubyte * size
+        buf = ctypes.cast(frameData, ctypes.POINTER(buf_type)).contents
+        arr = np.frombuffer(buf, dtype=np.uint8).copy()
+        return arr.reshape(height, width * bytesPerPixel)
 
     class ListenerSignal(QtCore.QObject):
         data_ready = QtCore.pyqtSignal(object)
@@ -325,3 +435,14 @@ def get_camera_info(cameraInfo):
     }
 
     return info
+
+@PxLApi._eventProcessFunction
+def camera_lost(hCamera, eventId, eventTimestamp, numDataBytes, data, userData):
+
+    # Copy event specific data, if it is provided
+    eventData = data.contents if bool(data) == True else 0
+
+    print("EventCallbackFunction: hCamera=%s, eventId=%d" % (hex(hCamera), eventId))
+    print("     eventTimestamp=%f, numDataBytes=%d" % (eventTimestamp, numDataBytes))
+    print("     eventData=%s, userData=%d (%s)\n" % (hex(eventData), userData, hex(userData)))
+    return PxLApi.ReturnCode.ApiSuccess
