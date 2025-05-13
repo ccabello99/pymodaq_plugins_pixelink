@@ -11,15 +11,13 @@
         }
     },
 
-    "FRAME_RATE": {"title": "Acquisition Frame Rate", "name": "FRAME_RATE", "type": "slide", "value": 15.0, "default": 15.0, "limits": [1.0, 15.0]},
+    "FRAME_RATE": {"title": "Frame Rate", "name": "FRAME_RATE", "type": "float", "value": 19.0, "readonly": true},
 
     "exposure": {
         "title": "Exposure Settings",
         "name": "exposure", 
         "type": "group",
         "children": {
-            "SHUTTER_AUTO": {"title": "Exposure Auto", "name": "SHUTTER_AUTO", "type": "led_push", "value": false, "default": false},
-            "SHUTTER_AUTO_ONCE": {"title": "Exposure Auto Once", "name": "SHUTTER_AUTO_ONCE", "type": "led_push", "value": false, "default": false},
             "SHUTTER": {"title": "Exposure Time (ms)", "name": "SHUTTER", "type": "slide", "value": 100.0, "default": 100.0, "limits": [10.0e-5, 10000.0]}
         }
     },
@@ -38,20 +36,12 @@
         "name": "misc", 
         "type": "group",
         "children": {
-            "PIXEL_FORMAT": {"title": "Pixel Format", "name": "PIXEL_FORMAT", "type": "list", "value": "Mono16", "limits": ["Mono8", "Mono16"]},
+            "PIXEL_FORMAT": {"title": "Pixel Format", "name": "PIXEL_FORMAT", "type": "list", "value": "Mono12Packed", "default": "Mono12Packed", "limits": ["Mono8", "Mono12Packed"]},
             "GAMMA": {"title": "Gamma", "name": "GAMMA", "type": "slide", "value": 1.0, "default": 1.0, "limits": [0.0, 2.0]},
             "SHARPNESS": {"title": "Sharpness", "name": "SHARPNESS", "type": "slide", "value": 1.0, "default": 1.0, "limits": [0.0, 10.0]},
             "SENSOR_TEMPERATURE": {"title": "Sensor Temp. (C)", "name": "SENSOR_TEMPERATURE", "type": "float", "value": 1.0, "readonly": true}
         }
     },
 
-    "device_state": {
-        "title": "Device State",
-        "name": "device_state", 
-        "type": "group",
-        "children": {
-            "device_state_load": {"title": "Load Device State ?", "name": "device_state_load", "type": "bool_push", "value": false},
-            "device_state_save": {"title": "Save Device State ?", "name": "device_state_save", "type": "bool_push", "value": false}
-        }
-    }
+    "device_state_save": {"title": "Save Device State ?", "name": "device_state_save", "type": "bool_push", "value": false}
 }

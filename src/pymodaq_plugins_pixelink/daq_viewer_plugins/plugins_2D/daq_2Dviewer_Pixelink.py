@@ -12,7 +12,7 @@ warnings.filterwarnings("ignore", category=RuntimeWarning, module="numpy")
 
 
 from pymodaq.utils.daq_utils import ThreadCommand
-from pymodaq_plugins_pixelink.hardware.pixelink import PixelinkCamera, get_info_for_all_cameras
+from pymodaq_plugins_pixelink.hardware.pixelink import PixelinkCamera, get_info_for_all_cameras, TemperatureMonitor
 from pymodaq.utils.parameter import Parameter
 from pymodaq.utils.data import Axis, DataFromPlugins, DataToExport
 from pymodaq.control_modules.viewer_utility_classes import main, DAQ_Viewer_base, comon_parameters
@@ -94,15 +94,24 @@ class DAQ_2DViewer_Pixelink(DAQ_Viewer_base):
         ret = PxLApi.setFeature(self.controller.camera, PxLApi.FeatureId.PIXEL_FORMAT, PxLApi.FeatureFlags.MANUAL, [0])
         if not PxLApi.apiSuccess(ret[0]):
             print("ERROR setting pixel format: {0}".format(ret[0]))
-            print("Error message:", PxLApi.getErrorReport(ret[0])[1].strReport)
+            print("Error message:", PxLApi.getErrorReport(ret[0])[1].strReturnCode)
 
         # Update the UI with available and current camera parameters
+        self.add_attributes_to_settings()
         self.update_params_ui()
+        for param in self.settings.children():
+            param.sigValueChanged.emit(param, param.value())
+            if param.hasChildren():
+                for child in param.children():
+                    child.sigValueChanged.emit(child, child.value())
 
         # Ensure correct pixel format limits
         misc_group = next(attr for attr in self.controller.attributes if attr['name'] == 'misc')
         pixel_format_limits = next(child['limits'] for child in misc_group.get('children', []) if child['name'] == 'PIXEL_FORMAT')
         self.settings.child('misc', 'PIXEL_FORMAT').setLimits(pixel_format_limits)
+
+        # Start thread for camera temp. monitoring
+        self.start_temperature_monitoring()
 
         self._prepare_view()
         info = "Initialized camera"
@@ -125,38 +134,73 @@ class DAQ_2DViewer_Pixelink(DAQ_Viewer_base):
             if self.controller != None:
                 self.close()
             self.ini_detector()
+
+        if name == "device_state_save":
+            if value:
+                self.controller.save_device_state()
+                self.settings.child('device_state', 'device_state_save').setValue(False)
+                param.sigValueChanged.emit(param, False)
+            else:
+                pass
+            return
+        if name == "Name":
+            self.user_id = value
+            PxLApi.setCameraName(self.controller.camera, value)
+            self.close()
+            # Update camera list to account for new device name & re-init
+            devices = get_info_for_all_cameras()
+            camera_list = [device["Name"] for device in devices]
+            param = self.settings.param('camera_list')
+            param.setValue(self.user_id)
+            param.setLimits(camera_list)
+            param.sigValueChanged.emit(param, value)
+            param.sigLimitsChanged.emit(param, camera_list)
+            self.ini_detector()
+            print("Camera name updated successfully. Restart live grab !")
+            return
     
         if name in self.controller.attribute_names:
+            feature_id = self.controller.feature_map[name]["id"]
             try:
                 # Special cases
                 if name == 'SHUTTER':
                     value *= 1e-3
-                if name == "NAME":
-                    self.user_id = value
-                    PxLApi.setCameraName(self.controller.camera, value)
-                if name == "device_state_save":
-                    self.controller.save_device_state()
-                    return
-                if name == "device_state_load":
-                    self.controller.save_device_state()
-                    # Reinitialize what is needed
-                    self.controller.camera.device_property_map.set_value('PixelFormat', 'Mono8')
-                    self.controller.start_acquisition()
-                    self.update_params_ui()
+                    ret = PxLApi.setFeature(self.controller.camera, feature_id, PxLApi.FeatureFlags.MANUAL, [value])
+                    feature_id = self.controller.feature_map["FRAME_RATE"]["id"]
+                    param_index = self.controller.feature_map["FRAME_RATE"]["params"]["VALUE"]
+                    new_frame_rate = PxLApi.getFeature(self.controller.camera, feature_id)[2][0]
+                    ret = PxLApi.getCameraFeatures(self.controller.camera, feature_id)
+                    feature = ret[1].Features[0]
+                    min_limit = feature.Params[param_index].fMinValue
+                    max_limit = feature.Params[param_index].fMaxValue
+                    new_limits = [min_limit, max_limit]
+                    # Update frame rate to be compatible w/ new exposure time
+                    param = self.settings.param('FRAME_RATE')
+                    param.setValue(new_frame_rate)
+                    param.setLimits(new_limits)
+                    param.sigValueChanged.emit(param, new_frame_rate)
+                    param.sigLimitsChanged.emit(param, new_limits)
                     return
                 if name == 'PIXEL_FORMAT':
-                    if self.controller != None:
-                        self.controller.close()
-                    
-                    self.controller = self.init_controller()
-                    self.controller.camera.device_property_map.set_value(name, value)
+                    self.controller.stop_acquisition()
+                    if value == 'Mono8':
+                        ret = PxLApi.setFeature(self.controller.camera, PxLApi.FeatureId.PIXEL_FORMAT, PxLApi.FeatureFlags.MANUAL, [PxLApi.PixelFormat.MONO8])
+                    elif value == 'Mono12Packed':
+                        ret = PxLApi.setFeature(self.controller.camera, PxLApi.FeatureId.PIXEL_FORMAT, PxLApi.FeatureFlags.MANUAL, [PxLApi.PixelFormat.MONO12_PACKED])
+                    if not PxLApi.apiSuccess(ret[0]):
+                        print("ERROR setting pixel format: {0}".format(ret[0]))
+                        print("Error message:", PxLApi.getErrorReport(ret[0])[1].strReturnCode)
                     self.controller.start_acquisition()
-                    print(f"Pixel format is now: {self.controller.camera.device_property_map.get_value_str(name)}. Restart live grab !")
                     self._prepare_view()
+                    return
 
-                self.controller.camera.device_property_map.set_value(name, value)
+                ret = PxLApi.setFeature(self.controller.camera, feature_id, PxLApi.FeatureFlags.MANUAL, [value])
+                if not PxLApi.apiSuccess(ret[0]):
+                    print("ERROR loading device state from non-volatile memory: {0}".format(ret[0]))
+                    print("Error message:", PxLApi.getErrorReport(ret[0])[1].strReturnCode)
             except Exception:
-                pass 
+                pass
+        QtWidgets.QApplication.processEvents()
     
     def _prepare_view(self):
         """Preparing a data viewer by emitting temporary data. Typically, needs to be called whenever the
@@ -225,8 +269,16 @@ class DAQ_2DViewer_Pixelink(DAQ_Viewer_base):
         """Terminate the communication protocol"""
         self.controller.attributes = None
         self.controller.close()
+            
+        # Stop any background threads
+        if hasattr(self, 'listener'):
+            self.listener.stop_listener()
+        if hasattr(self, 'temp_worker'):
+            self.temp_worker.stop()
+        if hasattr(self, 'temp_thread'):
+            self.temp_thread.quit()
+            self.temp_thread.wait()
 
-        self.controller = None  # Garbage collect the controller
         self.status.initialized = False
         self.status.controller = None
         self.status.info = ""
@@ -239,10 +291,30 @@ class DAQ_2DViewer_Pixelink(DAQ_Viewer_base):
         sleep_ms = 150
         self.crosshair_info = crosshair_info
         QtCore.QTimer.singleShot(sleep_ms, QtWidgets.QApplication.processEvents)
-        
-    
-    def update_params_ui(self):
 
+    def start_temperature_monitoring(self):
+        self.temp_thread = QtCore.QThread()
+        self.temp_worker = TemperatureMonitor(self.controller.camera)
+
+        self.temp_worker.moveToThread(self.temp_thread)
+
+        self.temp_thread.started.connect(self.temp_worker.run)
+        self.temp_worker.temperature_updated.connect(self.on_temperature_update)
+        self.temp_worker.finished.connect(self.temp_thread.quit)
+        self.temp_worker.finished.connect(self.temp_worker.deleteLater)
+        self.temp_thread.finished.connect(self.temp_thread.deleteLater)
+
+        self.temp_thread.start()
+
+    def on_temperature_update(self, temp: float):
+        param = self.settings.child('misc', 'SENSOR_TEMPERATURE')
+        param.setValue(temp)
+        param.sigValueChanged.emit(param, temp)
+        if temp > 50:
+            self.emit_status(ThreadCommand('Update_Status', [f"WARNING: {self.user_id} camera is too hot !!"]))
+
+
+    def add_attributes_to_settings(self):
         existing_group_names = {child.name() for child in self.settings.children()}
 
         for attr in self.controller.attributes:
@@ -268,6 +340,9 @@ class DAQ_2DViewer_Pixelink(DAQ_Viewer_base):
             else:
                 if attr_name not in existing_group_names:
                     self.settings.addChild(attr)
+        
+    
+    def update_params_ui(self):
 
         # Common syntax for any camera model
         self.settings.child('device_info','Name').setValue(self.controller.device_info["Name"])
@@ -279,12 +354,12 @@ class DAQ_2DViewer_Pixelink(DAQ_Viewer_base):
             param_type = param['type']
             param_name = param['name']
             
-            # Already handled
+            # Skip these
             if param_name == "device_info":
                 continue
-            # Skip this one
-            if param_name == "device_state":
+            if param_name == "device_state_save":
                 continue
+
             if param_type == 'group':
                 # Recurse over children in groups
                 for child in param['children']:
@@ -299,20 +374,17 @@ class DAQ_2DViewer_Pixelink(DAQ_Viewer_base):
                     ret = PxLApi.getFeature(self.controller.camera, feature_id)
                     if not PxLApi.apiSuccess(ret[0]):
                         print("ERROR getting feature: {0}".format(ret[0]))
-                        print("Error message:", PxLApi.getErrorReport(ret[0])[1].strReport)
+                        print("Error message:", PxLApi.getErrorReport(ret[0])[1].strReturnCode)
                     value = ret[2][0]
 
                     # Special case: if parameter is SHUTTER (exposure time), convert to ms from s
                     if child_name == 'SHUTTER':
                         value *= 1e3
 
-                    # Special case: if parameter is SHUTTER_AUTO (auto exposure)
-                    if child_name == 'SHUTTER_AUTO':
-                        value = False
-                    if child_name == 'SHUTTER_AUTO_ONCE':
-                        value = False
-
-                    # Special case: if parameter is Pixel Format, convert int to string:
+                    # Special case: if parameter is Pixel Format, initialize with Mono12Packed:
+                    if child_name == 'PIXEL_FORMAT':
+                        ret = PxLApi.setFeature(self.controller.camera, PxLApi.FeatureId.PIXEL_FORMAT, PxLApi.FeatureFlags.MANUAL, [PxLApi.PixelFormat.MONO12_PACKED])
+                        continue
 
 
                     # Set the value
@@ -343,7 +415,7 @@ class DAQ_2DViewer_Pixelink(DAQ_Viewer_base):
                 ret = PxLApi.getFeature(self.controller.camera, feature_id)
                 if not PxLApi.apiSuccess(ret[0]):
                     print("ERROR getting feature: {0}".format(ret[0]))
-                    print("Error message:", PxLApi.getErrorReport(ret[0])[1].strReport)
+                    print("Error message:", PxLApi.getErrorReport(ret[0])[1].strReturnCode)
                 value = ret[2][0]
 
                 # Set the value
