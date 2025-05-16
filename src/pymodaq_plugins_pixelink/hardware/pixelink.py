@@ -29,6 +29,9 @@ class PixelinkCamera:
         self.attributes = {}
         self.open()
 
+        # Start with triggering disabled so we start with a clean slate
+        self.disable_triggering()   
+
         # Callback setup for image grabbing
         self.listener = Listener()
         ret = PxLApi.setCallback(self.camera, PxLApi.Callback.FRAME, self.listener._user_data, self.listener._callback_func)
@@ -99,7 +102,6 @@ class PixelinkCamera:
             print("Error message:", PxLApi.getErrorReport(ret[0])[1].strReturnCode)    
 
     def save_device_state(self):
-        print("I am trying to save bro")
         ret = PxLApi.saveSettings(self.camera, PxLApi.Settings.SETTINGS_USER)
         if not PxLApi.apiSuccess(ret[0]):
             print("ERROR saving device state to non-volatile memory: {0}".format(ret[0]))
@@ -122,6 +124,50 @@ class PixelinkCamera:
         except Exception:
             pass
         self.start_acquisition()
+
+    def enable_feature(self, flags, enable):
+        if enable:
+            flags = ~PxLApi.FeatureFlags.MOD_BITS | PxLApi.FeatureFlags.MANUAL
+        else:
+            flags = ~PxLApi.FeatureFlags.MOD_BITS | PxLApi.FeatureFlags.OFF
+        return flags
+
+    def disable_triggering(self):
+        # Read current settings
+        ret = PxLApi.getFeature(self.camera, PxLApi.FeatureId.TRIGGER)
+        assert PxLApi.apiSuccess(ret[0])
+        flags = ret[1]
+        params = ret[2]
+        assert 5 == len(params)
+
+        # Disable triggering
+        flags = self.enable_feature(flags, False)
+
+        ret = PxLApi.setFeature(self.camera, PxLApi.FeatureId.TRIGGER, flags, params)
+        assert PxLApi.apiSuccess(ret[0])
+
+    def set_triggering(self, mode, triggerType, polarity, delay, param):
+
+        # Read current settings
+        ret = PxLApi.getFeature(self.camera, PxLApi.FeatureId.TRIGGER)
+        assert PxLApi.apiSuccess(ret[0])
+        flags = ret[1]
+        params = ret[2]
+        assert 5 == len(params)
+        
+        # Very important step: Enable triggering by clearing the FEATURE_FLAG_OFF bit
+        flags = self.enable_feature(flags, True)
+
+        # Assign the new values...
+        params[PxLApi.TriggerParams.MODE] = mode
+        params[PxLApi.TriggerParams.TYPE] = triggerType
+        params[PxLApi.TriggerParams.POLARITY] = polarity
+        params[PxLApi.TriggerParams.DELAY] = delay
+        params[PxLApi.TriggerParams.PARAMETER] = param
+
+        # ... and write them to the camera
+        ret = PxLApi.setFeature(self.camera, PxLApi.FeatureId.TRIGGER, flags, params)
+        assert PxLApi.apiSuccess(ret[0])
 
     def build_feature_param_name_map(self):
         feature_param_name_map = {}

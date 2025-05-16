@@ -1,15 +1,14 @@
 import numpy as np
 from pixelinkWrapper import*
+from datetime import datetime
+import os
+from pathlib import Path
+import imageio.v3 as iio
 
 import warnings
 import numpy as np
 # Suppress only NumPy RuntimeWarnings (bc of crosshair bug)
 warnings.filterwarnings("ignore", category=RuntimeWarning, module="numpy")
-
-# Prevents COM initialization errors associated with ic4.Library.init() being called at the top of the class
-#import pythoncom
-#pythoncom.CoInitialize()
-
 
 from pymodaq.utils.daq_utils import ThreadCommand
 from pymodaq_plugins_pixelink.hardware.pixelink import PixelinkCamera, get_info_for_all_cameras, TemperatureMonitor
@@ -55,6 +54,7 @@ class DAQ_2DViewer_Pixelink(DAQ_Viewer_base):
         self.y_axis = None
         self.axes = None
         self.data_shape = None
+        self.save_frame = False
 
     def init_controller(self) -> PixelinkCamera:
 
@@ -138,7 +138,7 @@ class DAQ_2DViewer_Pixelink(DAQ_Viewer_base):
         if name == "device_state_save":
             if value:
                 self.controller.save_device_state()
-                self.settings.child('device_state', 'device_state_save').setValue(False)
+                self.settings.param('device_state_save').setValue(False)
                 param.sigValueChanged.emit(param, False)
             else:
                 pass
@@ -158,49 +158,89 @@ class DAQ_2DViewer_Pixelink(DAQ_Viewer_base):
             self.ini_detector()
             print("Camera name updated successfully. Restart live grab !")
             return
+        
+        # Special cases
+        if name == 'SHUTTER':
+            feature_id = self.controller.feature_map[name]["id"]
+            value *= 1e-3
+            ret = PxLApi.setFeature(self.controller.camera, feature_id, PxLApi.FeatureFlags.MANUAL, [value])
+            feature_id = self.controller.feature_map["FRAME_RATE"]["id"]
+            param_index = self.controller.feature_map["FRAME_RATE"]["params"]["VALUE"]
+            new_frame_rate = PxLApi.getFeature(self.controller.camera, feature_id)[2][0]
+            ret = PxLApi.getCameraFeatures(self.controller.camera, feature_id)
+            feature = ret[1].Features[0]
+            min_limit = feature.Params[param_index].fMinValue
+            max_limit = feature.Params[param_index].fMaxValue
+            new_limits = [min_limit, max_limit]
+            # Update frame rate to be compatible w/ new exposure time
+            param = self.settings.param('FRAME_RATE')
+            param.setValue(new_frame_rate)
+            param.setLimits(new_limits)
+            param.sigValueChanged.emit(param, new_frame_rate)
+            param.sigLimitsChanged.emit(param, new_limits)
+            return
+        if name == 'PIXEL_FORMAT':
+            self.controller.stop_acquisition()
+            if value == 'Mono8':
+                ret = PxLApi.setFeature(self.controller.camera, PxLApi.FeatureId.PIXEL_FORMAT, PxLApi.FeatureFlags.MANUAL, [PxLApi.PixelFormat.MONO8])
+            elif value == 'Mono12Packed':
+                ret = PxLApi.setFeature(self.controller.camera, PxLApi.FeatureId.PIXEL_FORMAT, PxLApi.FeatureFlags.MANUAL, [PxLApi.PixelFormat.MONO12_PACKED])
+            if not PxLApi.apiSuccess(ret[0]):
+                print("ERROR setting pixel format: {0}".format(ret[0]))
+                print("Error message:", PxLApi.getErrorReport(ret[0])[1].strReturnCode)
+            self.controller.start_acquisition()
+            self._prepare_view()
+            return
+        if name == 'MODE':
+            if value:
+                if self.settings.child('trigger', 'POLARITY').value() == 'Rising Edge':
+                    polarity = PxLApi.Polarity.ACTIVE_HIGH
+                elif self.settings.child('trigger', 'POLARITY').value() == 'Falling Edge':
+                    polarity = PxLApi.Polarity.ACTIVE_LOW
+                self.controller.stop_acquisition() # Make sure stream is stopped before set trigger
+                self.controller.set_triggering(
+                    PxLApi.TriggerModes.MODE_0,
+                    PxLApi.TriggerTypes.HARDWARE,
+                    polarity,
+                    self.settings.child('trigger', 'DELAY').value()*1e-6,
+                    0)
+                self.controller.start_acquisition() # Turn stream back on
+            else:
+                param = self.settings.child('trigger', 'TriggerSave')
+                param.setValue(False) # Turn off save on trigger if triggering is off
+                param.sigValueChanged.emit(param, False) 
+                self.save_frame = False
+                self.controller.disable_triggering()
+        if name == 'TriggerSave':
+            if not self.settings.child('trigger', 'MODE').value():
+                print("Trigger mode is not active ! Start triggering first !")
+                self.emit_status(ThreadCommand('Update_Status', ["Trigger mode is not active ! Start triggering first !"]))
+                param = self.settings.child('trigger', 'TriggerSave')
+                param.setValue(False) # Turn off save on trigger if triggering is off
+                param.sigValueChanged.emit(param, False) 
+                return
+            if value:
+                self.save_frame = True
+                return
+            else:
+                self.save_frame = False
+                return
+        if name == 'TriggerSaveLocation':
+            return # we only need to reference this, nothing to do with the cam           
+        if name == 'TriggerSaveIndex':
+            return # we only need to reference this, nothing to do with the cam
     
         if name in self.controller.attribute_names:
             feature_id = self.controller.feature_map[name]["id"]
+            param_index = self.controller.feature_map[name]["params"]["VALUE"]
             try:
-                # Special cases
-                if name == 'SHUTTER':
-                    value *= 1e-3
-                    ret = PxLApi.setFeature(self.controller.camera, feature_id, PxLApi.FeatureFlags.MANUAL, [value])
-                    feature_id = self.controller.feature_map["FRAME_RATE"]["id"]
-                    param_index = self.controller.feature_map["FRAME_RATE"]["params"]["VALUE"]
-                    new_frame_rate = PxLApi.getFeature(self.controller.camera, feature_id)[2][0]
-                    ret = PxLApi.getCameraFeatures(self.controller.camera, feature_id)
-                    feature = ret[1].Features[0]
-                    min_limit = feature.Params[param_index].fMinValue
-                    max_limit = feature.Params[param_index].fMaxValue
-                    new_limits = [min_limit, max_limit]
-                    # Update frame rate to be compatible w/ new exposure time
-                    param = self.settings.param('FRAME_RATE')
-                    param.setValue(new_frame_rate)
-                    param.setLimits(new_limits)
-                    param.sigValueChanged.emit(param, new_frame_rate)
-                    param.sigLimitsChanged.emit(param, new_limits)
-                    return
-                if name == 'PIXEL_FORMAT':
-                    self.controller.stop_acquisition()
-                    if value == 'Mono8':
-                        ret = PxLApi.setFeature(self.controller.camera, PxLApi.FeatureId.PIXEL_FORMAT, PxLApi.FeatureFlags.MANUAL, [PxLApi.PixelFormat.MONO8])
-                    elif value == 'Mono12Packed':
-                        ret = PxLApi.setFeature(self.controller.camera, PxLApi.FeatureId.PIXEL_FORMAT, PxLApi.FeatureFlags.MANUAL, [PxLApi.PixelFormat.MONO12_PACKED])
-                    if not PxLApi.apiSuccess(ret[0]):
-                        print("ERROR setting pixel format: {0}".format(ret[0]))
-                        print("Error message:", PxLApi.getErrorReport(ret[0])[1].strReturnCode)
-                    self.controller.start_acquisition()
-                    self._prepare_view()
-                    return
-
                 ret = PxLApi.setFeature(self.controller.camera, feature_id, PxLApi.FeatureFlags.MANUAL, [value])
                 if not PxLApi.apiSuccess(ret[0]):
-                    print("ERROR loading device state from non-volatile memory: {0}".format(ret[0]))
+                    print("ERROR setting feature {name}: {0}".format(ret[0]))
                     print("Error message:", PxLApi.getErrorReport(ret[0])[1].strReturnCode)
+                    self.emit_status(ThreadCommand('Update_Status', ["Error message:", PxLApi.getErrorReport(ret[0])[1].strReturnCode]))
             except Exception:
                 pass
-        QtWidgets.QApplication.processEvents()
     
     def _prepare_view(self):
         """Preparing a data viewer by emitting temporary data. Typically, needs to be called whenever the
@@ -252,13 +292,30 @@ class DAQ_2DViewer_Pixelink(DAQ_Viewer_base):
 
 
     def emit_data_callback(self, frame) -> None:
-        self.dte_signal.emit(
-            DataToExport(f'{self.user_id}', data=[DataFromPlugins(
+        if not self.save_frame:
+            dte = DataToExport(f'{self.user_id}', data=[DataFromPlugins(
                 name=f'{self.user_id}',
                 data=[np.squeeze(frame)],
                 dim=self.data_shape,
                 labels=[f'{self.user_id}_{self.data_shape}'],
-                axes=self.axes)]))
+                axes=self.axes)])
+        else:
+            dte = DataToExport(f'{self.user_id}', data=[DataFromPlugins(
+                name=f'{self.user_id}',
+                data=[np.squeeze(frame)],
+                dim=self.data_shape,
+                labels=[f'{self.user_id}_{self.data_shape}'],
+                axes=self.axes, do_save=True)])
+            index = self.settings.child('trigger', 'TriggerSaveIndex')
+            filepath = self.settings.child('trigger', 'TriggerSaveLocation').value()
+            if not filepath:
+                filepath = os.path.join(os.path.expanduser('~'), 'Downloads', f"tir_{index.value()}.tiff")
+            else:
+                filepath = os.path.join(filepath, f"tir_{index.value()}.tiff")
+            iio.imwrite(filepath, frame)
+            index.setValue(index.value()+1)
+            index.sigValueChanged.emit(index, index.value())
+        self.dte_signal.emit(dte)
         self.controller.listener.frame_ready = False
 
     def stop(self):
@@ -282,7 +339,8 @@ class DAQ_2DViewer_Pixelink(DAQ_Viewer_base):
         self.status.initialized = False
         self.status.controller = None
         self.status.info = ""
-        print(f"{self.user_id} communication terminated successfully")   
+        print(f"{self.user_id} communication terminated successfully")
+        self.emit_status(ThreadCommand('Update_Status', [f"{self.user_id} communication terminated successfully"]))
     
     def roi_select(self, roi_info, ind_viewer):
         self.roi_info = roi_info
@@ -358,6 +416,8 @@ class DAQ_2DViewer_Pixelink(DAQ_Viewer_base):
             if param_name == "device_info":
                 continue
             if param_name == "device_state_save":
+                continue
+            if param_name == "trigger":
                 continue
 
             if param_type == 'group':

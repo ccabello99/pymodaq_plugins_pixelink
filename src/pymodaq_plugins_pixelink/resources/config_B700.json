@@ -31,6 +31,20 @@
         }
     },
 
+    "trigger": {
+        "title": "Trigger Settings",
+        "name": "trigger", 
+        "type": "group",
+        "children": {
+            "MODE": {"title": "Trigger Mode", "name": "MODE", "type": "led_push", "value": false},
+            "Save On Trigger": {"title": "Save on Trigger ?", "name": "TriggerSave", "type": "led_push", "value": false},
+            "Save Location": {"title": "Save Location", "name": "TriggerSaveLocation", "type": "str", "value": ""},
+            "Save Index": {"title": "Save Index", "name": "TriggerSaveIndex", "type": "int", "value": 0},            
+            "POLARITY": {"title": "Trigger Activation", "name": "POLARITY", "type": "list", "value": "Rising Edge", "limits": ["Rising Edge", "Falling Edge"]},
+            "DELAY": {"title": "Trigger Delay (us)", "name": "DELAY", "type": "float", "value": 0.0, "limits": [0.0, 100000.0]}
+        }
+    },
+
     "misc": {
         "title": "Additional Settings",
         "name": "misc", 
