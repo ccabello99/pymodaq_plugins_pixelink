@@ -62,4 +62,4 @@ Installation instructions
 * Tested on PyMoDAQ version 5.0.5
 * Tested on Windows 11
 * Must install Pixelink Capture or Pixelink SDK before use
-* Config files are needed for different camera models. Examples for PL-B953U camera is given in the resources directory.
+* Config files are needed for different camera models. Example for the PL-B953U camera is given in the resources directory. The name of the config file should be config_<model_name> where model_name is the output of getCameraInfo(cam)[1].ModelName
