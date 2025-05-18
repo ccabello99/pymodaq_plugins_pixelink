@@ -29,9 +29,6 @@ class PixelinkCamera:
         self.attributes = {}
         self.open()
 
-        # Start with triggering disabled so we start with a clean slate
-        self.disable_triggering()   
-
         # Callback setup for image grabbing
         self.listener = Listener()
         ret = PxLApi.setCallback(self.camera, PxLApi.Callback.FRAME, self.listener._user_data, self.listener._callback_func)
@@ -44,6 +41,9 @@ class PixelinkCamera:
         if not PxLApi.apiSuccess(ret[0]):
             print("ERROR loading user settings: {0}".format(ret[0]))
             print("Error message:", PxLApi.getErrorReport(ret[0])[1].strReturnCode)
+
+        # Start with triggering disabled so we start with a clean slate
+        self.disable_triggering() 
 
         # Initialize feature map with current values
         self.feature_map = self.build_feature_param_name_map()
@@ -112,18 +112,6 @@ class PixelinkCamera:
         if not PxLApi.apiSuccess(ret[0]):
             print("ERROR loading factory settings: {0}".format(ret[0]))
             print("Error message:", PxLApi.getErrorReport(ret[0])[1].strReturnCode)
-
-    def start_grabbing(self, frame_rate: int) -> None:
-        """Start continuously to grab data.
-
-        Whenever a grab succeeded, the callback defined in :meth:`set_callback` is called.
-        """
-        try:
-            #self.camera.device_property_map.set_value(ic4.PropId.ACQUISITION_FRAME_RATE, frame_rate)
-            pass
-        except Exception:
-            pass
-        self.start_acquisition()
 
     def enable_feature(self, flags, enable):
         if enable:

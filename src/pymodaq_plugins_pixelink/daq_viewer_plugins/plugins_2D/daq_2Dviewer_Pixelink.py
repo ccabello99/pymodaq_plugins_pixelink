@@ -50,9 +50,6 @@ class DAQ_2DViewer_Pixelink(DAQ_Viewer_base):
         self.user_id = None
         self.device_list_token = None
 
-        self.x_axis = None
-        self.y_axis = None
-        self.axes = None
         self.data_shape = None
         self.save_frame = False
 
@@ -157,6 +154,7 @@ class DAQ_2DViewer_Pixelink(DAQ_Viewer_base):
             param.sigLimitsChanged.emit(param, camera_list)
             self.ini_detector()
             print("Camera name updated successfully. Restart live grab !")
+            self.emit_status(ThreadCommand('Update_Status', ["Camera name updated successfully. Restart live grab !"]))
             return
         
         # Special cases
@@ -193,7 +191,7 @@ class DAQ_2DViewer_Pixelink(DAQ_Viewer_base):
             return
         if name == 'MODE':
             if value:
-                if self.settings.child('trigger', 'POLARITY').value() == 'Rising Edge':
+                if self.settings.child('trigger','POLARITY').value() == 'Rising Edge':
                     polarity = PxLApi.Polarity.ACTIVE_HIGH
                 elif self.settings.child('trigger', 'POLARITY').value() == 'Falling Edge':
                     polarity = PxLApi.Polarity.ACTIVE_LOW
@@ -206,7 +204,7 @@ class DAQ_2DViewer_Pixelink(DAQ_Viewer_base):
                     0)
                 self.controller.start_acquisition() # Turn stream back on
             else:
-                param = self.settings.child('trigger', 'TriggerSave')
+                param = self.settings.child('trigger', 'TriggerSaveOptions', 'TriggerSave')
                 param.setValue(False) # Turn off save on trigger if triggering is off
                 param.sigValueChanged.emit(param, False) 
                 self.save_frame = False
@@ -215,7 +213,7 @@ class DAQ_2DViewer_Pixelink(DAQ_Viewer_base):
             if not self.settings.child('trigger', 'MODE').value():
                 print("Trigger mode is not active ! Start triggering first !")
                 self.emit_status(ThreadCommand('Update_Status', ["Trigger mode is not active ! Start triggering first !"]))
-                param = self.settings.child('trigger', 'TriggerSave')
+                param = self.settings.child('trigger', 'TriggerSaveOptions', 'TriggerSave')
                 param.setValue(False) # Turn off save on trigger if triggering is off
                 param.sigValueChanged.emit(param, False) 
                 return
@@ -225,11 +223,17 @@ class DAQ_2DViewer_Pixelink(DAQ_Viewer_base):
             else:
                 self.save_frame = False
                 return
+        # we only need to reference these, nothing to do with the cam
         if name == 'TriggerSaveLocation':
-            return # we only need to reference this, nothing to do with the cam           
+            return
         if name == 'TriggerSaveIndex':
-            return # we only need to reference this, nothing to do with the cam
+            return
+        if name == 'Filetype':
+            return
+        if name == 'Prefix':
+            return              
     
+        # Update other features
         if name in self.controller.attribute_names:
             feature_id = self.controller.feature_map[name]["id"]
             param_index = self.controller.feature_map[name]["params"]["VALUE"]
@@ -253,14 +257,14 @@ class DAQ_2DViewer_Pixelink(DAQ_Viewer_base):
         self.settings.child('roi', 'width').setValue(width)
         self.settings.child('roi', 'height').setValue(height)
 
-        mock_data = np.zeros((width, height))
+        mock_data = np.zeros((height, width))
 
-        self.x_axis = Axis(label='Pixels', data=np.linspace(1, width, width), index=0)
+        self.x_axis = Axis(label='Pixels', data=np.linspace(1, width, width), index=1)
 
         if width != 1 and height != 1:
             data_shape = 'Data2D'
-            self.y_axis = Axis(label='Pixels', data=np.linspace(1, height, height), index=1)
-            self.axes = [self.x_axis, self.y_axis]
+            self.y_axis = Axis(label='Pixels', data=np.linspace(1, height, height), index=0)
+            self.axes = [self.y_axis, self.x_axis]
         else:
             data_shape = 'Data1D'
             self.axes = [self.x_axis]
@@ -281,7 +285,7 @@ class DAQ_2DViewer_Pixelink(DAQ_Viewer_base):
         try:
             self._prepare_view()
             if live:
-                self.controller.start_grabbing(frame_rate=self.settings.param('FRAME_RATE').value())
+                self.controller.start_acquisition()
             else:
                 self.controller.start_acquisition()
                 while not self.controller.listener.frame_ready:
@@ -305,13 +309,16 @@ class DAQ_2DViewer_Pixelink(DAQ_Viewer_base):
                 data=[np.squeeze(frame)],
                 dim=self.data_shape,
                 labels=[f'{self.user_id}_{self.data_shape}'],
-                axes=self.axes, do_save=True)])
-            index = self.settings.child('trigger', 'TriggerSaveIndex')
-            filepath = self.settings.child('trigger', 'TriggerSaveLocation').value()
+                do_save=True,
+                axes=self.axes)])
+            index = self.settings.child('trigger', 'TriggerSaveOptions', 'TriggerSaveIndex')
+            filepath = self.settings.child('trigger', 'TriggerSaveOptions', 'TriggerSaveLocation').value()
+            prefix = self.settings.child('trigger', 'TriggerSaveOptions', 'Prefix').value()
+            filetype = self.settings.child('trigger', 'TriggerSaveOptions', 'Filetype').value()
             if not filepath:
-                filepath = os.path.join(os.path.expanduser('~'), 'Downloads', f"tir_{index.value()}.tiff")
+                filepath = os.path.join(os.path.expanduser('~'), 'Downloads', f"{prefix}_{index.value()}.{filetype}")
             else:
-                filepath = os.path.join(filepath, f"tir_{index.value()}.tiff")
+                filepath = os.path.join(filepath, f"{prefix}_{index.value()}.{filetype}")
             iio.imwrite(filepath, frame)
             index.setValue(index.value()+1)
             index.sigValueChanged.emit(index, index.value())
