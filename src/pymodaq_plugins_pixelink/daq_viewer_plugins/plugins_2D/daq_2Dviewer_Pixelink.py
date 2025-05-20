@@ -137,6 +137,7 @@ class DAQ_2DViewer_Pixelink(DAQ_Viewer_base):
                 self.controller.save_device_state()
                 self.settings.param('device_state_save').setValue(False)
                 param.sigValueChanged.emit(param, False)
+                self.emit_status(ThreadCommand('Update_Status', ["Camera state saved successfully."]))
             else:
                 pass
             return

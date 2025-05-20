@@ -308,8 +308,13 @@ class Listener:
         # Cast frameData to a ctypes array and copy into NumPy array
         buf_type = ctypes.c_ubyte * size
         buf = ctypes.cast(frameData, ctypes.POINTER(buf_type)).contents
-        arr = np.frombuffer(buf, dtype=np.uint8).copy()
-        return arr.reshape(height, width * bytesPerPixel)
+        if bytesPerPixel == 1:
+            arr = np.frombuffer(buf, dtype=c_uint8).copy()
+        elif bytesPerPixel == 2:
+            arr = np.frombuffer(buf, dtype=np.dtype(">u2")).copy()
+            arrdiv = arr/16
+            arr = np.int16(arrdiv)
+        return arr.reshape(height, width)
 
     class ListenerSignal(QtCore.QObject):
         data_ready = QtCore.pyqtSignal(object)
