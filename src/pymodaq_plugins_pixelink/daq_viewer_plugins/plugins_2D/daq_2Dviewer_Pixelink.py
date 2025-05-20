@@ -183,6 +183,8 @@ class DAQ_2DViewer_Pixelink(DAQ_Viewer_base):
                 ret = PxLApi.setFeature(self.controller.camera, PxLApi.FeatureId.PIXEL_FORMAT, PxLApi.FeatureFlags.MANUAL, [PxLApi.PixelFormat.MONO8])
             elif value == 'Mono12Packed':
                 ret = PxLApi.setFeature(self.controller.camera, PxLApi.FeatureId.PIXEL_FORMAT, PxLApi.FeatureFlags.MANUAL, [PxLApi.PixelFormat.MONO12_PACKED])
+            elif value == 'Mono16':
+                ret = PxLApi.setFeature(self.controller.camera, PxLApi.FeatureId.PIXEL_FORMAT, PxLApi.FeatureFlags.MANUAL, [PxLApi.PixelFormat.MONO16])
             if not PxLApi.apiSuccess(ret[0]):
                 print("ERROR setting pixel format: {0}".format(ret[0]))
                 print("Error message:", PxLApi.getErrorReport(ret[0])[1].strReturnCode)

@@ -59,7 +59,7 @@
         "name": "misc", 
         "type": "group",
         "children": {
-            "PIXEL_FORMAT": {"title": "Pixel Format", "name": "PIXEL_FORMAT", "type": "list", "value": "Mono12Packed", "default": "Mono12Packed", "limits": ["Mono8", "Mono12Packed"]},
+            "PIXEL_FORMAT": {"title": "Pixel Format", "name": "PIXEL_FORMAT", "type": "list", "value": "Mono16", "default": "Mono16", "limits": ["Mono8", "Mono12Packed", "Mono16"]},
             "GAMMA": {"title": "Gamma", "name": "GAMMA", "type": "slide", "value": 1.0, "default": 1.0, "limits": [0.0, 2.0]},
             "SHARPNESS": {"title": "Sharpness", "name": "SHARPNESS", "type": "slide", "value": 1.0, "default": 1.0, "limits": [0.0, 10.0]},
             "SENSOR_TEMPERATURE": {"title": "Sensor Temp. (C)", "name": "SENSOR_TEMPERATURE", "type": "float", "value": 1.0, "readonly": true}
