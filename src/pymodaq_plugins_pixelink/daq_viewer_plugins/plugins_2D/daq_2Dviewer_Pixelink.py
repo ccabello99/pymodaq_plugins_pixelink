@@ -48,10 +48,13 @@ class DAQ_2DViewer_Pixelink(DAQ_Viewer_base):
 
         self.controller: None
         self.user_id = None
-        self.device_list_token = None
 
         self.data_shape = None
-        self.save_frame = False
+        self.save_frame_local = False
+        self.save_frame_leco = False
+
+        # For LECO operation
+        self.metadata = None
 
     def init_controller(self) -> PixelinkCamera:
 
@@ -210,7 +213,7 @@ class DAQ_2DViewer_Pixelink(DAQ_Viewer_base):
                 param = self.settings.child('trigger', 'TriggerSaveOptions', 'TriggerSave')
                 param.setValue(False) # Turn off save on trigger if triggering is off
                 param.sigValueChanged.emit(param, False) 
-                self.save_frame = False
+                self.save_frame_local = False
                 self.controller.disable_triggering()
         if name == 'TriggerSave':
             if not self.settings.child('trigger', 'MODE').value():
@@ -221,10 +224,10 @@ class DAQ_2DViewer_Pixelink(DAQ_Viewer_base):
                 param.sigValueChanged.emit(param, False) 
                 return
             if value:
-                self.save_frame = True
+                self.save_frame_local = True
                 return
             else:
-                self.save_frame = False
+                self.save_frame_local = False
                 return
         # we only need to reference these, nothing to do with the cam
         if name == 'TriggerSaveLocation':
@@ -299,14 +302,14 @@ class DAQ_2DViewer_Pixelink(DAQ_Viewer_base):
 
 
     def emit_data_callback(self, frame) -> None:
-        if not self.save_frame:
+        if not self.save_frame_local and not self.save_frame_leco:
             dte = DataToExport(f'{self.user_id}', data=[DataFromPlugins(
                 name=f'{self.user_id}',
                 data=[np.squeeze(frame)],
                 dim=self.data_shape,
                 labels=[f'{self.user_id}_{self.data_shape}'],
                 axes=self.axes)])
-        else:
+        elif self.save_frame_local and not self.save_frame_leco:
             dte = DataToExport(f'{self.user_id}', data=[DataFromPlugins(
                 name=f'{self.user_id}',
                 data=[np.squeeze(frame)],
@@ -318,6 +321,7 @@ class DAQ_2DViewer_Pixelink(DAQ_Viewer_base):
             filepath = self.settings.child('trigger', 'TriggerSaveOptions', 'TriggerSaveLocation').value()
             prefix = self.settings.child('trigger', 'TriggerSaveOptions', 'Prefix').value()
             filetype = self.settings.child('trigger', 'TriggerSaveOptions', 'Filetype').value()
+            ulid = None
             if not filepath:
                 filepath = os.path.join(os.path.expanduser('~'), 'Downloads', f"{prefix}{index.value()}.{filetype}")
             else:
@@ -325,6 +329,19 @@ class DAQ_2DViewer_Pixelink(DAQ_Viewer_base):
             iio.imwrite(filepath, frame)
             index.setValue(index.value()+1)
             index.sigValueChanged.emit(index, index.value())
+        elif self.save_frame_leco:
+            dte = DataToExport(f'{self.user_id}', data=[DataFromPlugins(
+                name=f'{self.user_id}',
+                data=[np.squeeze(frame)],
+                dim=self.data_shape,
+                labels=[f'{self.user_id}_{self.data_shape}'],
+                do_save=True,
+                axes=self.axes)])
+            filename = self.metadata['filename']
+            ulid = self.metadata['ulid']
+            #iio.imwrite(os.path.join(filepath, f"{prefix}{index.value()}.{filetype}"), frame) ## Change this to save hdf5
+            ### Emit a LECO signal that image has been saved with metadata then set it to None
+            self.metadata = None
         self.dte_signal.emit(dte)
         self.controller.listener.frame_ready = False
 
@@ -378,7 +395,7 @@ class DAQ_2DViewer_Pixelink(DAQ_Viewer_base):
         param = self.settings.child('misc', 'SENSOR_TEMPERATURE')
         param.setValue(temp)
         param.sigValueChanged.emit(param, temp)
-        if temp > 50:
+        if temp > 60:
             self.emit_status(ThreadCommand('Update_Status', [f"WARNING: {self.user_id} camera is too hot !!"]))
 
 
