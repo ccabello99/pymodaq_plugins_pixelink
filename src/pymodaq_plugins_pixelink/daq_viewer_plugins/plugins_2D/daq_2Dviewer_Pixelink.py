@@ -379,7 +379,7 @@ class DAQ_2DViewer_Pixelink(DAQ_Viewer_base):
                 metadata['burst_metadata']['timestamp'] = timestamp
 
             # Account for some uncertainty in timestamp of frame, assume 1 ms for now
-            metadata['detector_metadata']['fuzziness'] = 1000
+            metadata['detector_metadata']['fuzziness'] = 1
             count = 0
             for name in self.controller.attribute_names:
                 if name == 'GAIN':
@@ -415,7 +415,7 @@ class DAQ_2DViewer_Pixelink(DAQ_Viewer_base):
                 index.sigValueChanged.emit(index, index.value())
             # Include device metadata to send back
             # Account for some uncertainty in timestamp of frame, assume 1 ms for now
-            metadata['detector_metadata']['fuzziness'] = 1000
+            metadata['detector_metadata']['fuzziness'] = 1
             count = 0
             for name in self.controller.attribute_names:
                 if name == 'GAIN':
