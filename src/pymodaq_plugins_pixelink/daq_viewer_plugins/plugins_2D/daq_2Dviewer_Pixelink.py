@@ -456,8 +456,6 @@ class DAQ_2DViewer_Pixelink(DAQ_Viewer_base):
                                                 {'metadata': metadata, 
                                                  'message_type': 'detector',
                                                  'serial_number': self.controller.device_info.GetSerialNumber()}})
-
-        print(metadata)
         # Prepare for next frame
         self.metadata = None
         self.controller.listener.frame_ready = False
