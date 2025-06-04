@@ -61,8 +61,17 @@
         "children": {
             "PIXEL_FORMAT": {"title": "Pixel Format", "name": "PIXEL_FORMAT", "type": "list", "value": "Mono16", "default": "Mono16", "limits": ["Mono8", "Mono12Packed", "Mono16"]},
             "GAMMA": {"title": "Gamma", "name": "GAMMA", "type": "slide", "value": 1.0, "default": 1.0, "limits": [0.0, 2.0]},
-            "SHARPNESS": {"title": "Sharpness", "name": "SHARPNESS", "type": "slide", "value": 1.0, "default": 1.0, "limits": [0.0, 10.0]},
-            "SENSOR_TEMPERATURE": {"title": "Sensor Temp. (C)", "name": "SENSOR_TEMPERATURE", "type": "float", "value": 1.0, "readonly": true}
+            "SHARPNESS": {"title": "Sharpness", "name": "SHARPNESS", "type": "slide", "value": 1.0, "default": 1.0, "limits": [0.0, 10.0]}
+        }
+    },
+
+    "temperature": {
+        "title": "Temperature Monitoring",
+        "name": "temperature",
+        "type": "group",
+        "children": {
+            "TemperatureMonitor": {"title": "Turn on Monitoring", "name": "TEMPERATURE_MONITOR", "type": "led_push", "value": false},
+            "TemperatureAbs": {"title": "Sensor Temp. (C)", "name": "SENSOR_TEMPERATURE", "type": "float", "value": 1.0, "readonly": true}
         }
     },
 

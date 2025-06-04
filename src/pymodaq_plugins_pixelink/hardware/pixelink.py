@@ -4,8 +4,7 @@ from typing import Any, Callable, List, Optional, Tuple, Union
 from numpy.typing import NDArray
 from pixelinkWrapper import*
 from ctypes import*
-import ctypes.wintypes
-import threading
+import ctypes
 import numpy as np
 from qtpy import QtCore
 import json
@@ -297,7 +296,7 @@ class Listener:
         # Emit signal safely
         npFrame = self.numPy_image(frameData, width, height, bytesPerPixel)
         if npFrame is not None:
-            self.signals.data_ready.emit(npFrame)
+            self.signals.data_ready.emit({"frame": npFrame, "timestamp": time.time_ns()})
             self.frame_ready = True
 
         return 0

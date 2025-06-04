@@ -1,9 +1,10 @@
 import numpy as np
 from pixelinkWrapper import*
-from datetime import datetime
 import os
-from pathlib import Path
-import imageio.v3 as iio
+import imageio as iio
+from uuid6 import uuid7
+import h5py
+import json
 
 import warnings
 import numpy as np
@@ -12,6 +13,7 @@ warnings.filterwarnings("ignore", category=RuntimeWarning, module="numpy")
 
 from pymodaq.utils.daq_utils import ThreadCommand
 from pymodaq_plugins_pixelink.hardware.pixelink import PixelinkCamera, get_info_for_all_cameras, TemperatureMonitor
+from pymodaq_plugins_imagingsource.resources.extended_publisher import ExtendedPublisher
 from pymodaq.utils.parameter import Parameter
 from pymodaq.utils.data import Axis, DataFromPlugins, DataToExport
 from pymodaq.control_modules.viewer_utility_classes import main, DAQ_Viewer_base, comon_parameters
@@ -40,6 +42,14 @@ class DAQ_2DViewer_Pixelink(DAQ_Viewer_base):
         {'title': 'ROI', 'name': 'roi', 'type': 'group', 'children': [
             {'title': 'Image Width', 'name': 'width', 'type': 'int', 'value': 1024, 'readonly': True},
             {'title': 'Image Height', 'name': 'height', 'type': 'int', 'value': 768, 'readonly': True},
+        ]},
+        {'title': 'LECO Logging', 'name': 'leco_log', 'type': 'group', 'children': [
+            {'title': 'Send Frame Data ?', 'name': 'leco_send', 'type': 'led_push', 'value': False, 'default': False}, # This leads to huge performance drop as of now. Only use for single grabs, not continous
+            {'title': 'Publisher Name', 'name': 'publisher_name', 'type': 'str', 'value': ''},
+            {'title': 'Proxy Server Address', 'name': 'proxy_address', 'type': 'str', 'value': 'localhost', 'default': 'localhost'}, # Either IP or hostname of LECO proxy server
+            {'title': 'Proxy Server Port', 'name': 'proxy_port', 'type': 'int', 'value': 11100, 'default': 11100},
+            {'title': 'Metadata', 'name': 'leco_metadata', 'type': 'str', 'value': '', 'readonly': True},
+            {'title': 'Saving Base Path', 'name': 'leco_basepath', 'type': 'str', 'value': ''}, # This is the base directory for a file path sent from a remote director in the metadata
         ]}
     ]
 
@@ -50,15 +60,16 @@ class DAQ_2DViewer_Pixelink(DAQ_Viewer_base):
         self.user_id = None
 
         self.data_shape = None
-        self.save_frame_local = False
-        self.save_frame_leco = False
+        self.save_frame = False
 
         # For LECO operation
         self.metadata = None
+        self.data_publisher = None
+        self.send_frame_leco = False
 
     def init_controller(self) -> PixelinkCamera:
 
-        # Init camera with first available camera (will be a model_name at this point)
+        # Init camera
         self.user_id = self.settings.param('camera_list').value()
         self.emit_status(ThreadCommand('Update_Status', [f"Trying to connect to {self.user_id}", 'log']))
         devices = get_info_for_all_cameras()
@@ -105,13 +116,24 @@ class DAQ_2DViewer_Pixelink(DAQ_Viewer_base):
                 for child in param.children():
                     child.sigValueChanged.emit(child, child.value())
 
-        # Ensure correct pixel format limits
-        misc_group = next(attr for attr in self.controller.attributes if attr['name'] == 'misc')
-        pixel_format_limits = next(child['limits'] for child in misc_group.get('children', []) if child['name'] == 'PIXEL_FORMAT')
-        self.settings.child('misc', 'PIXEL_FORMAT').setLimits(pixel_format_limits)
+        # Setup data publisher for LECO if data publisher name is set (ideally it should match the LECO actor name)
+        publisher_name = self.settings.child('leco_log', 'publisher_name').value()
+        proxy_address = self.settings.child('leco_log', 'proxy_address').value()
+        proxy_port = self.settings.child('leco_log', 'proxy_port').value()
+        if publisher_name == '':
+            print("Publisher name is not set ! Set this first and then reinitialize for LECO logging.")
+            self.emit_status(ThreadCommand('Update_Status', ["Publisher name is not set ! Set this first and then reinitialize for LECO logging."]))
+        else:
+            self.data_publisher = ExtendedPublisher(full_name=publisher_name, host=proxy_address, port=proxy_port)
+            print(f"Data publisher {publisher_name} initialized for LECO logging")
+            self.emit_status(ThreadCommand('Update_Status', [f"Data publisher {publisher_name} initialized for LECO logging"]))
 
-        # Start thread for camera temp. monitoring
-        self.start_temperature_monitoring()
+        try:
+            base_path = QtCore.QSettings().value()('leco_log/basepath', '')
+        except Exception as e:
+            print(f"Error finding LECO base path: {e}")
+            base_path = ''
+        self.settings.child('leco_log', 'leco_basepath').setValue(base_path)
 
         self._prepare_view()
         info = "Initialized camera"
@@ -224,10 +246,10 @@ class DAQ_2DViewer_Pixelink(DAQ_Viewer_base):
                 param.sigValueChanged.emit(param, False) 
                 return
             if value:
-                self.save_frame_local = True
+                self.save_frame = True
                 return
             else:
-                self.save_frame_local = False
+                self.save_frame = False
                 return
         # we only need to reference these, nothing to do with the cam
         if name == 'TriggerSaveLocation':
@@ -237,7 +259,40 @@ class DAQ_2DViewer_Pixelink(DAQ_Viewer_base):
         if name == 'Filetype':
             return
         if name == 'Prefix':
-            return              
+            return
+        if name == 'TEMPERATURE_MONITOR':
+            if value:
+                # Start thread for camera temp. monitoring
+                self.start_temperature_monitoring()
+            else:
+                # Stop background threads
+                if hasattr(self, 'temp_worker'):
+                    self.temp_worker.stop()
+                if hasattr(self, 'temp_thread'):
+                    self.temp_thread.quit()
+                    self.temp_thread.wait()
+            return
+        if name == 'leco_send':
+            if value:
+                self.send_frame_leco = True
+            else:
+                self.send_frame_leco = False
+            return
+        if name == 'leco_basepath':
+            base_path = value
+            if not os.path.exists(base_path):
+                print(f"LECO saving base path {base_path} does not exist !")
+                self.emit_status(ThreadCommand('Update_Status', [f"LECO saving base path {base_path} does not exist !"]))
+            else:
+                try:
+                    QtCore.QSettings().setValue('leco_log/basepath', base_path)
+                    print(f"LECO saving base path set to {base_path}")
+                    self.emit_status(ThreadCommand('Update_Status', [f"LECO saving base path set to {base_path}"]))
+                except Exception as e:
+                    print(f"Error setting LECO saving base path: {e}")
+                    self.emit_status(ThreadCommand('Update_Status', [f"Error setting LECO saving base path: {e}"]))
+        if name == 'leco_metadata':
+            self.metadata = json.loads(value)        
     
         # Update other features
         if name in self.controller.attribute_names:
@@ -295,54 +350,116 @@ class DAQ_2DViewer_Pixelink(DAQ_Viewer_base):
             else:
                 self.controller.start_acquisition()
                 while not self.controller.listener.frame_ready:
-                    pass
+                    pass # do nothing until a frame is ready
                 self.controller.stop_acquisition()
         except Exception as e:
             self.emit_status(ThreadCommand('Update_Status', [str(e), "log"]))
 
 
-    def emit_data_callback(self, frame) -> None:
-        if not self.save_frame_local and not self.save_frame_leco:
-            dte = DataToExport(f'{self.user_id}', data=[DataFromPlugins(
-                name=f'{self.user_id}',
-                data=[np.squeeze(frame)],
-                dim=self.data_shape,
-                labels=[f'{self.user_id}_{self.data_shape}'],
-                axes=self.axes)])
-        elif self.save_frame_local and not self.save_frame_leco:
-            dte = DataToExport(f'{self.user_id}', data=[DataFromPlugins(
-                name=f'{self.user_id}',
-                data=[np.squeeze(frame)],
-                dim=self.data_shape,
-                labels=[f'{self.user_id}_{self.data_shape}'],
-                do_save=True,
-                axes=self.axes)])
-            index = self.settings.child('trigger', 'TriggerSaveOptions', 'TriggerSaveIndex')
-            filepath = self.settings.child('trigger', 'TriggerSaveOptions', 'TriggerSaveLocation').value()
-            prefix = self.settings.child('trigger', 'TriggerSaveOptions', 'Prefix').value()
-            filetype = self.settings.child('trigger', 'TriggerSaveOptions', 'Filetype').value()
-            ulid = None
-            if not filepath:
-                filepath = os.path.join(os.path.expanduser('~'), 'Downloads', f"{prefix}{index.value()}.{filetype}")
-            else:
-                filepath = os.path.join(filepath, f"{prefix}{index.value()}.{filetype}")
-            iio.imwrite(filepath, frame)
-            index.setValue(index.value()+1)
-            index.sigValueChanged.emit(index, index.value())
-        elif self.save_frame_leco:
-            dte = DataToExport(f'{self.user_id}', data=[DataFromPlugins(
-                name=f'{self.user_id}',
-                data=[np.squeeze(frame)],
-                dim=self.data_shape,
-                labels=[f'{self.user_id}_{self.data_shape}'],
-                do_save=True,
-                axes=self.axes)])
-            filename = self.metadata['filename']
-            ulid = self.metadata['ulid']
-            #iio.imwrite(os.path.join(filepath, f"{prefix}{index.value()}.{filetype}"), frame) ## Change this to save hdf5
-            ### Emit a LECO signal that image has been saved with metadata then set it to None
-            self.metadata = None
+    def emit_data_callback(self, frame_data: dict) -> None:
+        frame = frame_data['frame']
+        timestamp = frame_data['timestamp']
+        if frame.ndim == 3 and frame.shape[-1] == 1:
+            frame = frame.squeeze(-1)
+        shape = frame.shape
+
+        # First emit data to the GUI
+        dte = DataToExport(f'{self.user_id}', data=[DataFromPlugins(
+            name=f'{self.user_id}',
+            data=[np.squeeze(frame)],
+            dim=self.data_shape,
+            labels=[f'{self.user_id}_{self.data_shape}'],
+            axes=self.axes)])
         self.dte_signal.emit(dte)
+
+        # Now, handle data saving with filepath given by user in trigger save settings or from metadata set remotely with LECO
+        if not self.save_frame:
+            if self.metadata is not None:
+                metadata = self.metadata
+            else:
+                metadata = {'burst_metadata':{}, 'file_metadata': {}, 'detector_metadata': {}}
+                metadata['burst_metadata']['uuid'] = str(uuid7())
+                metadata['burst_metadata']['user_id'] = self.user_id
+                metadata['burst_metadata']['timestamp'] = timestamp
+
+            # Account for some uncertainty in timestamp of frame, assume 1 ms for now
+            metadata['detector_metadata']['fuzziness'] = 1000
+            count = 0
+            for name in self.controller.attribute_names:
+                if name == 'GAIN':
+                    metadata['detector_metadata']['gain'] = self.settings.child('gain', name).value()
+                    count += 1
+                if name == 'SHUTTER':
+                    metadata['detector_metadata']['exposure_time'] = self.settings.child('exposure', name).value()
+                    count += 1
+                if count == 2:
+                    break
+            metadata['detector_metadata']['shape'] = shape
+        
+        elif self.save_frame:
+            index = self.settings.child('trigger', 'TriggerSaveOptions', 'TriggerSaveIndex')
+            if self.metadata is not None:
+                metadata = self.metadata
+                filepath = self.metadata['file_metadata']['filepath']
+                filename = self.metadata['file_metadata']['filename']
+            else:
+                filepath = self.settings.child('trigger', 'TriggerSaveOptions', 'TriggerSaveLocation').value()
+                prefix = self.settings.child('trigger', 'TriggerSaveOptions', 'Prefix').value()
+                filetype = self.settings.child('trigger', 'TriggerSaveOptions', 'Filetype').value()
+                if not filepath:
+                    filepath = os.path.join(os.path.expanduser('~'), 'Downloads', f"{prefix}{index.value()}.{filetype}")
+                else:
+                    filepath = os.path.join(filepath, f"{prefix}{index.value()}.{filetype}")
+                metadata['burst_metadata']['uuid'] = str(uuid7())
+                metadata['burst_metadata']['user_id'] = self.user_id
+                metadata['burst_metadata']['timestamp'] = timestamp
+                metadata['file_metadata']['filepath'] = filepath
+                metadata['file_metadata']['filename'] = filename
+                index.setValue(index.value()+1)
+                index.sigValueChanged.emit(index, index.value())
+            # Include device metadata to send back
+            # Account for some uncertainty in timestamp of frame, assume 1 ms for now
+            metadata['detector_metadata']['fuzziness'] = 1000
+            count = 0
+            for name in self.controller.attribute_names:
+                if name == 'GAIN':
+                    metadata['detector_metadata']['gain'] = self.settings.child('gain', name).value()
+                    count += 1
+                if name == 'SHUTTER':
+                    metadata['detector_metadata']['exposure_time'] = self.settings.child('exposure', name).value()
+                    count += 1
+                if count == 2:
+                    break
+            metadata['detector_metadata']['shape'] = shape
+            if filetype == 'h5':
+                with h5py.File(os.path.join(filepath, filename), 'w') as f:
+                    f.create_dataset(filename, data=frame)
+                    f.attrs['uuid'] = metadata['burst_metadata']['uuid']
+                    f.attrs['user_id'] = metadata['burst_metadata']['user_id']
+                    f.attrs['timestamp'] = timestamp
+                    f.attrs['exposure_time'] = metadata['detector_metadata']['exposure_time']
+                    f.attrs['gain'] = metadata['detector_metadata']['gain']
+                    f.attrs['shape'] = metadata['detector_metadata']['shape']
+                    f.attrs['fuzziness'] = metadata['detector_metadata']['fuzziness']
+            else:
+                iio.imwrite(filepath, frame)
+
+        # Finally, handle publishing with LECO, including frame raw data if enabled to log frame captured/saved event
+        if self.data_publisher is not None:
+            if self.send_frame_leco:                        
+                self.data_publisher.send_data2({self.settings.child('leco_log', 'publisher_name').value(): 
+                                                {'frame': frame, 'metadata': metadata, 
+                                                 'message_type': 'detector', 
+                                                 'serial_number': self.controller.device_info.GetSerialNumber()}})
+            else:
+                self.data_publisher.send_data2({self.settings.child('leco_log', 'publisher_name').value(): 
+                                                {'metadata': metadata, 
+                                                 'message_type': 'detector',
+                                                 'serial_number': self.controller.device_info.GetSerialNumber()}})
+
+        print(metadata)
+        # Prepare for next frame
+        self.metadata = None
         self.controller.listener.frame_ready = False
 
     def stop(self):
@@ -392,11 +509,11 @@ class DAQ_2DViewer_Pixelink(DAQ_Viewer_base):
         self.temp_thread.start()
 
     def on_temperature_update(self, temp: float):
-        param = self.settings.child('misc', 'SENSOR_TEMPERATURE')
+        param = self.settings.child('temperature', 'SENSOR_TEMPERATURE')
         param.setValue(temp)
         param.sigValueChanged.emit(param, temp)
         if temp > 60:
-            self.emit_status(ThreadCommand('Update_Status', [f"WARNING: {self.user_id} camera is too hot !!"]))
+            self.emit_status(ThreadCommand('Update_Status', [f"WARNING: {self.user_id} camera is hot !!"]))
 
 
     def add_attributes_to_settings(self):
@@ -445,6 +562,8 @@ class DAQ_2DViewer_Pixelink(DAQ_Viewer_base):
             if param_name == "device_state_save":
                 continue
             if param_name == "trigger":
+                continue
+            if param_name == "temperature":
                 continue
 
             if param_type == 'group':
