@@ -446,12 +446,12 @@ class DAQ_2DViewer_Pixelink(DAQ_Viewer_base):
                 self.data_publisher.send_data2({self.settings.child('leco_log', 'publisher_name').value(): 
                                                 {'frame': frame, 'metadata': metadata, 
                                                  'message_type': 'detector', 
-                                                 'serial_number': self.controller.device_info.GetSerialNumber()}})
+                                                 'serial_number': self.controller.device_info["Serial Number"]}})
             else:
                 self.data_publisher.send_data2({self.settings.child('leco_log', 'publisher_name').value(): 
                                                 {'metadata': metadata, 
                                                  'message_type': 'detector',
-                                                 'serial_number': self.controller.device_info.GetSerialNumber()}})
+                                                 'serial_number': self.controller.device_info["Serial Number"]}})
         # Prepare for next frame
         self.metadata = None
         self.controller.listener.frame_ready = False
