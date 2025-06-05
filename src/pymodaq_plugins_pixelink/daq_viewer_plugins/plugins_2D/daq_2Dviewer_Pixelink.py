@@ -13,7 +13,7 @@ warnings.filterwarnings("ignore", category=RuntimeWarning, module="numpy")
 
 from pymodaq.utils.daq_utils import ThreadCommand
 from pymodaq_plugins_pixelink.hardware.pixelink import PixelinkCamera, get_info_for_all_cameras, TemperatureMonitor
-from pymodaq_plugins_imagingsource.resources.extended_publisher import ExtendedPublisher
+from pymodaq_plugins_pixelink.resources.extended_publisher import ExtendedPublisher
 from pymodaq.utils.parameter import Parameter
 from pymodaq.utils.data import Axis, DataFromPlugins, DataToExport
 from pymodaq.control_modules.viewer_utility_classes import main, DAQ_Viewer_base, comon_parameters
