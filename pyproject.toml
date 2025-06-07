@@ -14,7 +14,7 @@ description = 'PyMoDAQ plugin for interfacing with Pixelink cameras.'
 dependencies = [
     'pymodaq>=4.4.7',
     'numpy',
-    'pixelinkWrapper'
+    'pixelinkWrapper',
     'imageio',
     'uuid6',
     'h5py'
