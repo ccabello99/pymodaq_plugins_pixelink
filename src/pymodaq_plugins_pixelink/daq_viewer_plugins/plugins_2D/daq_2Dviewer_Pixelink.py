@@ -372,6 +372,8 @@ class DAQ_2DViewer_Pixelink(DAQ_Viewer_base):
         if not self.save_frame:
             if self.metadata is not None:
                 metadata = self.metadata
+                metadata['burst_metadata']['user_id'] = self.user_id
+                metadata['burst_metadata']['timestamp'] = timestamp
             else:
                 metadata = {'burst_metadata':{}, 'file_metadata': {}, 'detector_metadata': {}}
                 metadata['burst_metadata']['uuid'] = str(uuid7())
@@ -394,6 +396,7 @@ class DAQ_2DViewer_Pixelink(DAQ_Viewer_base):
         
         elif self.save_frame:
             index = self.settings.child('trigger', 'TriggerSaveOptions', 'TriggerSaveIndex')
+            filetype = self.settings.child('trigger', 'TriggerSaveOptions', 'Filetype').value()
             if self.metadata is not None:
                 metadata = self.metadata
                 filepath = self.metadata['file_metadata']['filepath']
@@ -401,11 +404,9 @@ class DAQ_2DViewer_Pixelink(DAQ_Viewer_base):
             else:
                 filepath = self.settings.child('trigger', 'TriggerSaveOptions', 'TriggerSaveLocation').value()
                 prefix = self.settings.child('trigger', 'TriggerSaveOptions', 'Prefix').value()
-                filetype = self.settings.child('trigger', 'TriggerSaveOptions', 'Filetype').value()
                 if not filepath:
-                    filepath = os.path.join(os.path.expanduser('~'), 'Downloads', f"{prefix}{index.value()}.{filetype}")
-                else:
-                    filepath = os.path.join(filepath, f"{prefix}{index.value()}.{filetype}")
+                    filepath = os.path.join(os.path.expanduser('~'), 'Downloads')
+                filename = f"{prefix}{index.value()}.{filetype}"
                 metadata['burst_metadata']['uuid'] = str(uuid7())
                 metadata['burst_metadata']['user_id'] = self.user_id
                 metadata['burst_metadata']['timestamp'] = timestamp
@@ -438,10 +439,10 @@ class DAQ_2DViewer_Pixelink(DAQ_Viewer_base):
                     f.attrs['shape'] = metadata['detector_metadata']['shape']
                     f.attrs['fuzziness'] = metadata['detector_metadata']['fuzziness']
             else:
-                iio.imwrite(filepath, frame)
+                iio.imwrite(os.path.join(filepath, f"{filename}.{filetype}"), frame)
 
         # Finally, handle publishing with LECO, including frame raw data if enabled to log frame captured/saved event
-        if self.data_publisher is not None:
+        if self.data_publisher is not None and self.save_frame:
             if self.send_frame_leco:                        
                 self.data_publisher.send_data2({self.settings.child('leco_log', 'publisher_name').value(): 
                                                 {'frame': frame, 'metadata': metadata, 
