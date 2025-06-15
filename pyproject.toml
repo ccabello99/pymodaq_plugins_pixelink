@@ -6,15 +6,15 @@ h5exporters = false  # true if plugin contains custom h5 file exporters
 scanners = false  # true if plugin contains custom scan layout (daq_scan extensions)
 
 [urls]
-package-url = 'https://github.com/PyMoDAQ/pymodaq_plugins_imagingsource'
+package-url = 'https://github.com/PyMoDAQ/pymodaq_plugins_pixelink'
 
 [project]
-name = "pymodaq_plugins_imagingsource"
+name = "pymodaq_plugins_pixelink"
 description = 'PyMoDAQ plugin for interfacing with Pixelink cameras.'
 dependencies = [
     'pymodaq>=4.4.7',
     'numpy',
-    'pixelinkWrapper'
+    'pixelinkWrapper',
     'imageio',
     'uuid6',
     'h5py'
