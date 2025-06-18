@@ -35,6 +35,10 @@ class DAQ_2DViewer_Pixelink(DAQ_Viewer_base):
 
     devices = get_info_for_all_cameras()
     camera_list = [device["Name"] for device in devices]
+
+    
+    # Default place to store qsettings for this module
+    settings_pixelink = QtCore.QSettings("PyMoDAQ", "Pixelink")
     
 
     params = comon_parameters + [
@@ -129,7 +133,7 @@ class DAQ_2DViewer_Pixelink(DAQ_Viewer_base):
             self.emit_status(ThreadCommand('Update_Status', [f"Data publisher {publisher_name} initialized for LECO logging"]))
 
         try:
-            base_path = QtCore.QSettings().value()('leco_log/basepath', '')
+            base_path = self.settings_pixelink.value('leco_log/basepath', os.path.join(os.path.expanduser('~'), 'Downloads'))
         except Exception as e:
             print(f"Error finding LECO base path: {e}")
             base_path = ''
@@ -281,7 +285,7 @@ class DAQ_2DViewer_Pixelink(DAQ_Viewer_base):
                 self.emit_status(ThreadCommand('Update_Status', [f"LECO saving base path {base_path} does not exist !"]))
             else:
                 try:
-                    QtCore.QSettings().setValue('leco_log/basepath', base_path)
+                    self.settings_pixelink.setValue('leco_log/basepath', base_path)
                     print(f"LECO saving base path set to {base_path}")
                     self.emit_status(ThreadCommand('Update_Status', [f"LECO saving base path set to {base_path}"]))
                 except Exception as e:
@@ -373,7 +377,6 @@ class DAQ_2DViewer_Pixelink(DAQ_Viewer_base):
             if self.metadata is not None:
                 metadata = self.metadata
                 metadata['burst_metadata']['user_id'] = self.user_id
-                metadata['burst_metadata']['timestamp'] = timestamp
             else:
                 metadata = {'burst_metadata':{}, 'file_metadata': {}, 'detector_metadata': {}}
                 metadata['burst_metadata']['uuid'] = str(uuid7())
@@ -401,12 +404,16 @@ class DAQ_2DViewer_Pixelink(DAQ_Viewer_base):
                 metadata = self.metadata
                 filepath = self.metadata['file_metadata']['filepath']
                 filename = self.metadata['file_metadata']['filename']
+                basepath = self.settings_pixelink.value('leco_log/basepath', '')
+                if basepath:
+                    filepath = os.path.join(basepath, os.path.basename(filepath))                
             else:
                 filepath = self.settings.child('trigger', 'TriggerSaveOptions', 'TriggerSaveLocation').value()
                 prefix = self.settings.child('trigger', 'TriggerSaveOptions', 'Prefix').value()
                 if not filepath:
                     filepath = os.path.join(os.path.expanduser('~'), 'Downloads')
                 filename = f"{prefix}{index.value()}.{filetype}"
+                metadata = {'burst_metadata':{}, 'file_metadata': {}, 'detector_metadata': {}}
                 metadata['burst_metadata']['uuid'] = str(uuid7())
                 metadata['burst_metadata']['user_id'] = self.user_id
                 metadata['burst_metadata']['timestamp'] = timestamp
@@ -430,7 +437,8 @@ class DAQ_2DViewer_Pixelink(DAQ_Viewer_base):
             metadata['detector_metadata']['shape'] = shape
             if filetype == 'h5':
                 with h5py.File(os.path.join(filepath, filename), 'w') as f:
-                    f.create_dataset(filename, data=frame)
+                    dataset_name = f"frame_{timestamp}"
+                    f.create_dataset(dataset_name, data=frame)
                     f.attrs['uuid'] = metadata['burst_metadata']['uuid']
                     f.attrs['user_id'] = metadata['burst_metadata']['user_id']
                     f.attrs['timestamp'] = timestamp
