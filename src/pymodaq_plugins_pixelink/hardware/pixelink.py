@@ -70,47 +70,51 @@ class PixelinkCamera:
         """Get the attributes of the camera and store them in a dictionary."""
         name = self.model_name.replace(" ", "-")
         file_path = os.path.join(os.environ.get('PROGRAMDATA'), '.pymodaq', f'config_{name}.json')
-        with open(file_path, 'r') as file:
-            attributes = json.load(file)
-            self.attributes = self.clean_device_attributes(attributes)
+
+        try:
+            with open(file_path, 'r') as file:
+                attributes = json.load(file)
+                self.attributes = self.clean_device_attributes(attributes)
+        except Exception as e:
+            log.error(f"Could not find attributes config file at {file_path}:", e)
 
     def start_acquisition(self) -> None:
         ret = PxLApi.setStreamState(self.camera, PxLApi.StreamState.START)
         if not PxLApi.apiSuccess(ret[0]):
-            print("ERROR setting stream state function: {0}".format(ret[0]))
-            print("Error message:", PxLApi.getErrorReport(ret[0])[1].strReturnCode)
+            log.error("ERROR setting stream state function: {0}".format(ret[0]))
+            log.error("Error message:", PxLApi.getErrorReport(ret[0])[1].strReturnCode)
 
     def stop_acquisition(self) -> None:
         ret = PxLApi.setStreamState(self.camera, PxLApi.StreamState.STOP)
         if not PxLApi.apiSuccess(ret[0]):
-            print("ERROR setting stream state function: {0}".format(ret[0]))
-            print("Error message:", PxLApi.getErrorReport(ret[0])[1].strReturnCode)
+            log.error("ERROR setting stream state function: {0}".format(ret[0]))
+            log.error("Error message:", PxLApi.getErrorReport(ret[0])[1].strReturnCode)
 
     def close(self) -> None:
         ret = PxLApi.setStreamState(self.camera, PxLApi.StreamState.STOP)
         if not PxLApi.apiSuccess(ret[0]):
-            print("ERROR setting stream state function: {0}".format(ret[0]))
-            print("Error message:", PxLApi.getErrorReport(ret[0])[1].strReturnCode)
+            log.error("ERROR setting stream state function: {0}".format(ret[0]))
+            log.error("Error message:", PxLApi.getErrorReport(ret[0])[1].strReturnCode)
         ret = PxLApi.setCallback(self.camera, PxLApi.Callback.FRAME, self.listener._user_data, 0)
         if not PxLApi.apiSuccess(ret[0]):
-            print("ERROR disabling frame callback function: {0}".format(ret[0]))
-            print("Error message:", PxLApi.getErrorReport(ret[0])[1].strReturnCode)
+            log.error("ERROR disabling frame callback function: {0}".format(ret[0]))
+            log.error("Error message:", PxLApi.getErrorReport(ret[0])[1].strReturnCode)
         ret = PxLApi.uninitialize(self.camera)
         if not PxLApi.apiSuccess(ret[0]):
-            print("ERROR uninitializing camera: {0}".format(ret[0]))
-            print("Error message:", PxLApi.getErrorReport(ret[0])[1].strReturnCode)    
+            log.error("ERROR uninitializing camera: {0}".format(ret[0]))
+            log.error("Error message:", PxLApi.getErrorReport(ret[0])[1].strReturnCode)    
 
     def save_device_state(self):
         ret = PxLApi.saveSettings(self.camera, PxLApi.Settings.SETTINGS_USER)
         if not PxLApi.apiSuccess(ret[0]):
-            print("ERROR saving device state to non-volatile memory: {0}".format(ret[0]))
-            print("Error message:", PxLApi.getErrorReport(ret[0])[1].strReturnCode)
+            log.error("ERROR saving device state to non-volatile memory: {0}".format(ret[0]))
+            log.error("Error message:", PxLApi.getErrorReport(ret[0])[1].strReturnCode)
 
     def factory_device_state(self):
         ret = PxLApi.loadSettings(self.camera, PxLApi.Settings.SETTINGS_FACTORY)
         if not PxLApi.apiSuccess(ret[0]):
-            print("ERROR loading factory settings: {0}".format(ret[0]))
-            print("Error message:", PxLApi.getErrorReport(ret[0])[1].strReturnCode)
+            log.error("ERROR loading factory settings: {0}".format(ret[0]))
+            log.error("Error message:", PxLApi.getErrorReport(ret[0])[1].strReturnCode)
 
     def enable_feature(self, flags, enable):
         if enable:
