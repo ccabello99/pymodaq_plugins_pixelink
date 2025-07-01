@@ -1,15 +1,4 @@
 {
-    "device_info": {
-        "title": "Device Info",
-        "name": "device_info", 
-        "type": "group",
-        "children": {
-            "Device Name": {"title": "Device Name", "name": "Name", "type": "str", "value": ""},
-            "Model Name": {"title": "Model Name", "name": "Model_Name", "type": "str", "value": "", "readonly": true},
-            "Serial Number": {"title": "Serial Number", "name": "Serial_Number", "type": "str", "value": "", "readonly": true},
-            "Firmware Version": {"title": "Firmware Version", "name": "Firmware_Version", "type": "str", "value": "", "readonly": true}
-        }
-    },
 
     "FRAME_RATE": {"title": "Frame Rate", "name": "FRAME_RATE", "type": "float", "value": 19.0, "readonly": true},
 

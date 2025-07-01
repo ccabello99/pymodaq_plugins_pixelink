@@ -43,6 +43,12 @@ class DAQ_2DViewer_PixelinkWithLECO(DAQ_Viewer_base):
 
     params = comon_parameters + [
         {'title': 'Camera List:', 'name': 'camera_list', 'type': 'list', 'value': '', 'limits': camera_list},
+        {"title": "Device Info", "name": "device_info", "type": "group","children": [
+            {"title": "Device Name", "name": "Name", "type": "str", "value": ""},
+            {"title": "Model Name", "name": "Model_Name", "type": "str", "value": "", "readonly": True},
+            {"title": "Serial Number", "name": "Serial_Number", "type": "str", "value": "", "readonly": True},
+            {"title": "Firmware Version", "name": "Firmware_Version", "type": "str", "value": "", "readonly": True}
+        ]},        
         {'title': 'ROI', 'name': 'roi', 'type': 'group', 'children': [
             {'title': 'Image Width', 'name': 'width', 'type': 'int', 'value': 1024, 'readonly': True},
             {'title': 'Image Height', 'name': 'height', 'type': 'int', 'value': 768, 'readonly': True},
