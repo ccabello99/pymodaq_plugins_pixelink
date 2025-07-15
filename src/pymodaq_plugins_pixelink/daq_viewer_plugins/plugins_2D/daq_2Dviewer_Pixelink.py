@@ -107,6 +107,8 @@ class DAQ_2DViewer_Pixelink(DAQ_Viewer_base):
         self.add_attributes_to_settings()
         self.update_params_ui()
         for param in self.settings.children():
+            if param.name() == 'device_info':
+                continue
             param.sigValueChanged.emit(param, param.value())
             if param.hasChildren():
                 for child in param.children():
@@ -209,10 +211,10 @@ class DAQ_2DViewer_Pixelink(DAQ_Viewer_base):
                     0)
                 self.controller.start_acquisition() # Turn stream back on
             else:
+                self.save_frame = False
                 param = self.settings.child('trigger', 'TriggerSaveOptions', 'TriggerSave')
-                param.setValue(False) # Turn off save on trigger if triggering is off
-                param.sigValueChanged.emit(param, False) 
-                self.save_frame_local = False
+                param.setValue(False) # Turn off save on trigger if we turn off triggering
+                param.sigValueChanged.emit(param, False)
                 self.controller.disable_triggering()
         if name == 'TriggerSave':
             if not self.settings.child('trigger', 'MODE').value():
@@ -361,6 +363,14 @@ class DAQ_2DViewer_Pixelink(DAQ_Viewer_base):
         if hasattr(self, 'listener'):
             self.listener.stop_listener()
         self.stop_temp_monitoring()
+
+        # Make sure we set these to false if camera disconnected
+        param = self.settings.child('trigger', 'MODE')
+        param.setValue(False) # Turn off save on trigger if triggering is off
+        param.sigValueChanged.emit(param, False)
+        param = self.settings.child('trigger', 'TriggerSaveOptions', 'TriggerSave')
+        param.setValue(False) # Turn off save on trigger if triggering is off
+        param.sigValueChanged.emit(param, False)           
 
         self.status.initialized = False
         self.status.controller = None

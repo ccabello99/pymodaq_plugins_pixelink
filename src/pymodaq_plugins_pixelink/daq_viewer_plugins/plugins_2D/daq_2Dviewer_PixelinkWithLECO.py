@@ -55,9 +55,11 @@ class DAQ_2DViewer_PixelinkWithLECO(DAQ_Viewer_base):
             {'title': 'Image Height', 'name': 'height', 'type': 'int', 'value': 768, 'readonly': True},
         ]},
         {'title': 'LECO Logging', 'name': 'leco_log', 'type': 'group', 'children': [
-            {'title': 'Send Frame Data ?', 'name': 'leco_send', 'type': 'led_push', 'value': False, 'default': False}, # This leads to huge performance drop as of now. Only use for single grabs, not continous
+            {'title': 'Send Frame Data ?', 'name': 'leco_send', 'type': 'led_push', 'value': False, 'default': False,
+                'tip': 'This leads to huge performance drop as of now. Only use for single grabs, not continuous'},
             {'title': 'Publisher Name', 'name': 'publisher_name', 'type': 'str', 'value': ''},
-            {'title': 'Proxy Server Address', 'name': 'proxy_address', 'type': 'str', 'value': 'localhost', 'default': 'localhost'}, # Either IP or hostname of LECO proxy server
+            {'title': 'Proxy Server Address', 'name': 'proxy_address', 'type': 'str', 'value': 'localhost', 'default': 'localhost',
+                'tip': 'Either IP or hostname of LECO proxy server'},
             {'title': 'Proxy Server Port', 'name': 'proxy_port', 'type': 'int', 'value': 11100, 'default': 11100},
             {'title': 'Metadata', 'name': 'leco_metadata', 'type': 'str', 'value': '', 'readonly': True},
             {'title': 'Saving Base Path:', 'name': 'leco_basepath', 'type': 'browsepath', 'value': '', 'filetype': False,
@@ -123,6 +125,8 @@ class DAQ_2DViewer_PixelinkWithLECO(DAQ_Viewer_base):
         self.add_attributes_to_settings()
         self.update_params_ui()
         for param in self.settings.children():
+            if param.name() == 'device_info':
+                continue
             param.sigValueChanged.emit(param, param.value())
             if param.hasChildren():
                 for child in param.children():
@@ -140,6 +144,7 @@ class DAQ_2DViewer_PixelinkWithLECO(DAQ_Viewer_base):
             print(f"Data publisher {publisher_name} initialized for LECO logging")
             self.emit_status(ThreadCommand('Update_Status', [f"Data publisher {publisher_name} initialized for LECO logging"]))
 
+        
         try:
             base_path = self.settings_pixelink.value('leco_log/basepath', os.path.join(os.path.expanduser('~'), 'Downloads'))
         except Exception as e:
@@ -244,10 +249,10 @@ class DAQ_2DViewer_PixelinkWithLECO(DAQ_Viewer_base):
                     0)
                 self.controller.start_acquisition() # Turn stream back on
             else:
+                self.save_frame = False
                 param = self.settings.child('trigger', 'TriggerSaveOptions', 'TriggerSave')
-                param.setValue(False) # Turn off save on trigger if triggering is off
-                param.sigValueChanged.emit(param, False) 
-                self.save_frame_local = False
+                param.setValue(False) # Turn off save on trigger if we turn off triggering
+                param.sigValueChanged.emit(param, False)
                 self.controller.disable_triggering()
         if name == 'TriggerSave':
             if not self.settings.child('trigger', 'MODE').value():
@@ -293,14 +298,14 @@ class DAQ_2DViewer_PixelinkWithLECO(DAQ_Viewer_base):
                 self.emit_status(ThreadCommand('Update_Status', [f"LECO saving base path {base_path} does not exist !"]))
             else:
                 try:
-                    self.settings_pixelink.setValue('leco_log/basepath', base_path)
+                    self.settings_basler.setValue('leco_log/basepath', base_path)
                     print(f"LECO saving base path set to {base_path}")
                     self.emit_status(ThreadCommand('Update_Status', [f"LECO saving base path set to {base_path}"]))
                 except Exception as e:
                     print(f"Error setting LECO saving base path: {e}")
                     self.emit_status(ThreadCommand('Update_Status', [f"Error setting LECO saving base path: {e}"]))
         if name == 'leco_metadata':
-            self.metadata = json.loads(value)        
+            self.metadata = json.loads(value)       
     
         # Update other features
         if name in self.controller.attribute_names:
@@ -396,10 +401,10 @@ class DAQ_2DViewer_PixelinkWithLECO(DAQ_Viewer_base):
         if self.send_frame_leco:
             self.publish_metadata(metadata, frame)
         else:
-            self.publish_metadata(metadata)    
+            self.publish_metadata(metadata)   
     
     def get_metadata_and_save(self, frame, timestamp, shape):
-        if not self.save_frame:
+        if self.save_frame:
             if self.metadata is not None:
                 metadata = self.metadata
                 metadata['burst_metadata']['user_id'] = self.user_id
@@ -422,8 +427,6 @@ class DAQ_2DViewer_PixelinkWithLECO(DAQ_Viewer_base):
                 if count == 2:
                     break
             metadata['detector_metadata']['shape'] = shape
-        
-        elif self.save_frame:
             index = self.settings.child('trigger', 'TriggerSaveOptions', 'TriggerSaveIndex')
             filetype = self.settings.child('trigger', 'TriggerSaveOptions', 'Filetype').value()
             if self.metadata is not None:
@@ -487,19 +490,22 @@ class DAQ_2DViewer_PixelinkWithLECO(DAQ_Viewer_base):
                 full_path = os.path.join(filepath, f"{filename}.{filetype}")
                 os.makedirs(os.path.dirname(full_path), exist_ok=True)
                 iio.imwrite(full_path, frame)
-
+        return metadata
+        
     def publish_metadata(self, metadata, frame: Optional[np.ndarray] = None):
         if self.data_publisher is not None and self.save_frame:
             if self.send_frame_leco:                        
                 self.data_publisher.send_data2({self.settings.child('leco_log', 'publisher_name').value(): 
                                                 {'frame': frame, 'metadata': metadata, 
                                                  'message_type': 'detector', 
-                                                 'serial_number': self.controller.device_info["Serial Number"]}})
+                                                 'serial_number': self.controller.device_info.GetSerialNumber(),
+                                                 'format_version': 'hdf5-v0.1'}})
             else:
                 self.data_publisher.send_data2({self.settings.child('leco_log', 'publisher_name').value(): 
                                                 {'metadata': metadata, 
                                                  'message_type': 'detector',
-                                                 'serial_number': self.controller.device_info["Serial Number"]}})        
+                                                 'serial_number': self.controller.device_info.GetSerialNumber(),
+                                                 'format_version': 'hdf5-v0.1'}})
     
     def close(self):
         """Terminate the communication protocol"""
@@ -512,12 +518,12 @@ class DAQ_2DViewer_PixelinkWithLECO(DAQ_Viewer_base):
         self.stop_temp_monitoring()
 
         # Make sure we set these to false if camera disconnected
-        param = self.settings.child('trigger', 'TriggerMode')
+        param = self.settings.child('trigger', 'MODE')
         param.setValue(False) # Turn off save on trigger if triggering is off
         param.sigValueChanged.emit(param, False)
         param = self.settings.child('trigger', 'TriggerSaveOptions', 'TriggerSave')
         param.setValue(False) # Turn off save on trigger if triggering is off
-        param.sigValueChanged.emit(param, False)         
+        param.sigValueChanged.emit(param, False)          
 
         self.status.initialized = False
         self.status.controller = None
