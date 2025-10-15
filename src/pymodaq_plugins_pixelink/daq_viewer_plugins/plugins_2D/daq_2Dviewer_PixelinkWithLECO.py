@@ -398,7 +398,7 @@ class DAQ_2DViewer_PixelinkWithLECO(DAQ_Viewer_base):
         return ''
     
     def handle_metadata_and_saving(self, frame, timestamp, shape):
-        if not self.settings.child('trigger', 'TriggerMode').value():
+        if not self.settings.child('trigger', 'MODE').value():
             return        
         metadata = self.get_metadata_and_save(frame, timestamp, shape)
         if self.send_frame_leco:
@@ -490,14 +490,14 @@ class DAQ_2DViewer_PixelinkWithLECO(DAQ_Viewer_base):
                     print(f"Unsupported file type {filetype} for saving frame. Supported types are: png, jpg, jpeg, tiff, tif, h5")
                     self.emit_status(ThreadCommand('Update_Status', [f"Unsupported file type {filetype} for saving frame. Supported types are: png, jpg, jpeg, tiff, tif, h5"]))
                     return
-                full_path = os.path.join(filepath, f"{filename}")
+                full_path = os.path.join(filepath, f"{filename}.{filetype}")
                 os.makedirs(os.path.dirname(full_path), exist_ok=True)
                 iio.imwrite(full_path, frame)
         return metadata
         
     def publish_metadata(self, metadata, frame: Optional[np.ndarray] = None):
         if self.data_publisher is not None and self.save_frame:
-            if self.send_frame_leco:                        
+            if self.send_frame_leco:
                 self.data_publisher.send_data2({self.settings.child('leco_log', 'publisher_name').value(): 
                                                 {'frame': frame, 'metadata': metadata, 
                                                  'message_type': 'detector', 
