@@ -60,6 +60,7 @@ class PixelinkCamera:
         ret = PxLApi.initialize(int(self.device_info["Serial Number"]))
         if PxLApi.apiSuccess(ret[0]):
             self.camera = ret[1]
+        self.create_default_config_if_not_exists()
         self.get_attributes()
         self.attribute_names = [attr['name'] for attr in self.attributes] + [child['name'] for attr in self.attributes if attr.get('type') == 'group' for child in attr.get('children', [])]
 
