@@ -6,16 +6,17 @@ from pixelinkWrapper import*
 from ctypes import*
 import ctypes
 import numpy as np
-from qtpy import QtCore
+from qtpy import QtCore, QtWidgets
 import json
 import os
 import time
+import threading
 
 if not hasattr(QtCore, "pyqtSignal"):
     QtCore.pyqtSignal = QtCore.Signal  # type: ignore
 
-log = logging.getLogger(__name__)
-log.addHandler(logging.NullHandler())
+logger = logging.getLogger(__name__)
+logger.addHandler(logging.NullHandler())
 
 
 class PixelinkCamera:
@@ -26,7 +27,11 @@ class PixelinkCamera:
         self.model_name = info["Model Name"]
         self.device_info = info
         self.attributes = {}
+        self._msg_opener = None
         self.open()
+
+        # Default directory for parameter config files
+        self.base_dir = os.path.join(os.environ.get('PROGRAMDATA'), '.pymodaq')
 
         # Callback setup for image grabbing
         self.listener = Listener()
@@ -69,52 +74,52 @@ class PixelinkCamera:
     def get_attributes(self):
         """Get the attributes of the camera and store them in a dictionary."""
         name = self.model_name.replace(" ", "-")
-        file_path = os.path.join(os.environ.get('PROGRAMDATA'), '.pymodaq', f'config_{name}.json')
+        file_path = os.path.join(self.base_dir, f'config_{name}.json')
 
         try:
             with open(file_path, 'r') as file:
                 attributes = json.load(file)
                 self.attributes = self.clean_device_attributes(attributes)
         except Exception as e:
-            log.error(f"Could not find attributes config file at {file_path}:", e)
+            logger.error(f"Could not find attributes config file at {file_path}:", e)
 
     def start_acquisition(self) -> None:
         ret = PxLApi.setStreamState(self.camera, PxLApi.StreamState.START)
         if not PxLApi.apiSuccess(ret[0]):
-            log.error("ERROR setting stream state function: {0}".format(ret[0]))
-            log.error("Error message:", PxLApi.getErrorReport(ret[0])[1].strReturnCode)
+            logger.error("ERROR setting stream state function: {0}".format(ret[0]))
+            logger.error("Error message:", PxLApi.getErrorReport(ret[0])[1].strReturnCode)
 
     def stop_acquisition(self) -> None:
         ret = PxLApi.setStreamState(self.camera, PxLApi.StreamState.STOP)
         if not PxLApi.apiSuccess(ret[0]):
-            log.error("ERROR setting stream state function: {0}".format(ret[0]))
-            log.error("Error message:", PxLApi.getErrorReport(ret[0])[1].strReturnCode)
+            logger.error("ERROR setting stream state function: {0}".format(ret[0]))
+            logger.error("Error message:", PxLApi.getErrorReport(ret[0])[1].strReturnCode)
 
     def close(self) -> None:
         ret = PxLApi.setStreamState(self.camera, PxLApi.StreamState.STOP)
         if not PxLApi.apiSuccess(ret[0]):
-            log.error("ERROR setting stream state function: {0}".format(ret[0]))
-            log.error("Error message:", PxLApi.getErrorReport(ret[0])[1].strReturnCode)
+            logger.error("ERROR setting stream state function: {0}".format(ret[0]))
+            logger.error("Error message:", PxLApi.getErrorReport(ret[0])[1].strReturnCode)
         ret = PxLApi.setCallback(self.camera, PxLApi.Callback.FRAME, self.listener._user_data, 0)
         if not PxLApi.apiSuccess(ret[0]):
-            log.error("ERROR disabling frame callback function: {0}".format(ret[0]))
-            log.error("Error message:", PxLApi.getErrorReport(ret[0])[1].strReturnCode)
+            logger.error("ERROR disabling frame callback function: {0}".format(ret[0]))
+            logger.error("Error message:", PxLApi.getErrorReport(ret[0])[1].strReturnCode)
         ret = PxLApi.uninitialize(self.camera)
         if not PxLApi.apiSuccess(ret[0]):
-            log.error("ERROR uninitializing camera: {0}".format(ret[0]))
-            log.error("Error message:", PxLApi.getErrorReport(ret[0])[1].strReturnCode)    
+            logger.error("ERROR uninitializing camera: {0}".format(ret[0]))
+            logger.error("Error message:", PxLApi.getErrorReport(ret[0])[1].strReturnCode)    
 
     def save_device_state(self):
         ret = PxLApi.saveSettings(self.camera, PxLApi.Settings.SETTINGS_USER)
         if not PxLApi.apiSuccess(ret[0]):
-            log.error("ERROR saving device state to non-volatile memory: {0}".format(ret[0]))
-            log.error("Error message:", PxLApi.getErrorReport(ret[0])[1].strReturnCode)
+            logger.error("ERROR saving device state to non-volatile memory: {0}".format(ret[0]))
+            logger.error("Error message:", PxLApi.getErrorReport(ret[0])[1].strReturnCode)
 
     def factory_device_state(self):
         ret = PxLApi.loadSettings(self.camera, PxLApi.Settings.SETTINGS_FACTORY)
         if not PxLApi.apiSuccess(ret[0]):
-            log.error("ERROR loading factory settings: {0}".format(ret[0]))
-            log.error("Error message:", PxLApi.getErrorReport(ret[0])[1].strReturnCode)
+            logger.error("ERROR loading factory settings: {0}".format(ret[0]))
+            logger.error("Error message:", PxLApi.getErrorReport(ret[0])[1].strReturnCode)
 
     def enable_feature(self, flags, enable):
         if enable:
@@ -266,7 +271,153 @@ class PixelinkCamera:
 
         return clean_params
 
+    def check_attribute_names(self):
+        found_exposure = None
+        found_gain = None
 
+        possible_exposures = ["SHUTTER"]
+        for exp in possible_exposures:
+            try:
+                if exp in self.feature_map.keys():
+                    found_exposure = exp
+                    break
+            except Exception:
+                pass
+
+        possible_gains = ["GAIN"]
+        for gain in possible_gains:
+            try:
+                if gain in self.feature_map.keys():
+                    found_gain = gain
+            except Exception:
+                pass
+
+        found_exposure = found_exposure or "SHUTTER"
+        found_gain = found_gain or "GAIN"
+
+        return found_exposure, found_gain
+
+    
+    def create_default_config_if_not_exists(self):
+        model_name = self.model_name.replace(" ", "-")
+        config_dir = self.base_dir
+        os.makedirs(config_dir, exist_ok=True)
+        config_path = os.path.join(config_dir, f'config_{model_name}.json')
+        if os.path.exists(config_path):
+            return
+        else:
+            self._msg_opener = DefaultConfigMsg()
+            msg = QtWidgets.QMessageBox()
+            msg.setIcon(QtWidgets.QMessageBox.Question)
+            msg.setWindowTitle("Missing Config File")
+            msg.setText(f"No config file found for camera model '{model_name}'.")
+            msg.setInformativeText("Would you like to auto-create a default configuration file?")
+            msg.setStandardButtons(QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
+            msg.setDefaultButton(QtWidgets.QMessageBox.Yes)
+            QtCore.QTimer.singleShot(0, QtWidgets.QApplication.processEvents)
+            user_choice = self.safe_exec_messagebox(msg)
+            self.handle_user_choice(user_choice, config_path, model_name)
+
+    def handle_user_choice(self, user_choice, config_path, model_name):
+
+        if user_choice == QtWidgets.QMessageBox.Yes:
+            # Try to detect valid exposure/gain names
+            found_exposure, found_gain = self.check_attribute_names()
+
+            # Build basic config
+            config_data = {
+                "exposure": {
+                    "title": "Exposure Settings",
+                    "name": "exposure",
+                    "type": "group",
+                    "children": {
+                        "Exposure Time": {
+                            "title": "Exposure Time (ms)",
+                            "name": found_exposure,
+                            "type": "slide",
+                            "value": 100.0,
+                            "default": 100.0,
+                            "limits": [0.001, 10000.0]
+                        }
+                    }
+                },
+                "gain": {
+                    "title": "Gain Settings",
+                    "name": "gain",
+                    "type": "group",
+                    "children": {
+                        "Gain": {
+                            "title": "Gain Value",
+                            "name": found_gain,
+                            "type": "slide",
+                            "value": 1.0,
+                            "default": 1.0,
+                            "limits": [0.0, 2.0]
+                        }
+                    }
+                }
+            }
+            try:
+                print(f"Creating default config for {model_name} at {config_path}")
+                with open(config_path, "w") as f:
+                    json.dump(config_data, f, indent=4)
+                msg_info = QtWidgets.QMessageBox()
+                msg_info.setIcon(QtWidgets.QMessageBox.Information)
+                msg_info.setWindowTitle("Config Created")
+                msg_info.setText(f"Default config file created for '{model_name}'.")
+                msg_info.setInformativeText(f"Path:\n{config_path}\n\nYou can edit this file to add/remove parameters.")
+                self.safe_exec_messagebox(msg_info)
+            except Exception as e:
+                msg_err = QtWidgets.QMessageBox()
+                msg_err.setIcon(QtWidgets.QMessageBox.Critical)
+                msg_err.setWindowTitle("Error Creating Config")
+                msg_err.setText(f"Failed to write default config file:\n{e}")
+                self.safe_exec_messagebox(msg_err)
+        else:
+            msg_info = QtWidgets.QMessageBox()
+            msg_info.setIcon(QtWidgets.QMessageBox.Information)
+            msg_info.setWindowTitle("Config Not Created")
+            msg_info.setText(f"You have chosen not to create a default config file for Basler '{model_name}'.")
+            msg_info.setInformativeText(f"You will not have access to camera parameters until you have a valid config file.\n\nYou can find examples of config files in the resources directory of this package or reinitialize and create a default.")
+            self.safe_exec_messagebox(msg_info)
+
+    def safe_exec_messagebox(self, msgbox) -> int:
+        result_container = {}
+        finished_event = threading.Event()
+
+        def show_dialog():
+            try:
+                result_container["choice"] = int(msgbox.exec_())
+            except Exception:
+                result_container["choice"] = int(QtWidgets.QMessageBox.No)
+            finally:
+                finished_event.set()
+
+        if self._msg_opener is None:
+            self._msg_opener = DefaultConfigMsg()
+
+        QtCore.QMetaObject.invokeMethod(
+            self._msg_opener,
+            "run_box",
+            QtCore.Qt.ConnectionType.AutoConnection,
+            QtCore.Q_ARG(object, show_dialog)
+        )
+
+        if QtCore.QThread.currentThread() != QtWidgets.QApplication.instance().thread():
+            finished_event.wait()
+            QtCore.QTimer.singleShot(0, QtWidgets.QApplication.processEvents)
+        else:
+            while not finished_event.is_set():
+                QtWidgets.QApplication.processEvents(QtCore.QEventLoop.AllEvents, 50)
+
+        return result_container.get("choice", int(QtWidgets.QMessageBox.No))
+    
+class DefaultConfigMsg(QtCore.QObject):
+    def __init__(self):
+        super().__init__()
+    @QtCore.Slot(object)
+    def run_box(self, fn):
+        fn()
 
 class Listener:
 

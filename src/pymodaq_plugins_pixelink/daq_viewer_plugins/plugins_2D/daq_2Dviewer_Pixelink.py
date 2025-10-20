@@ -2,9 +2,6 @@ import numpy as np
 from pixelinkWrapper import*
 import os
 import imageio as iio
-from uuid6 import uuid7
-import h5py
-import json
 
 import warnings
 import numpy as np
@@ -361,16 +358,25 @@ class DAQ_2DViewer_Pixelink(DAQ_Viewer_base):
             
         # Stop any background threads
         if hasattr(self, 'listener'):
-            self.listener.stop_listener()
-        self.stop_temp_monitoring()
+            try:
+                self.listener.stop_listener()
+            except Exception:
+                pass
+        try:
+            self.stop_temp_monitoring()
+        except Exception:
+            pass # no temp settings
 
-        # Make sure we set these to false if camera disconnected
-        param = self.settings.child('trigger', 'MODE')
-        param.setValue(False) # Turn off save on trigger if triggering is off
-        param.sigValueChanged.emit(param, False)
-        param = self.settings.child('trigger', 'TriggerSaveOptions', 'TriggerSave')
-        param.setValue(False) # Turn off save on trigger if triggering is off
-        param.sigValueChanged.emit(param, False)           
+        # Just set these to false if camera disconnected for clean GUI
+        try:
+            param = self.settings.child('trigger', 'TriggerMode')
+            param.setValue(False) # Turn off save on trigger if triggering is off
+            param.sigValueChanged.emit(param, False)
+            param = self.settings.child('trigger', 'TriggerSaveOptions', 'TriggerSave')
+            param.setValue(False) # Turn off save on trigger if triggering is off
+            param.sigValueChanged.emit(param, False) 
+        except Exception:
+            pass # no trigger settings          
 
         self.status.initialized = False
         self.status.controller = None
