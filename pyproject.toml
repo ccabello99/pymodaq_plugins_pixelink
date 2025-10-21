@@ -17,6 +17,7 @@ dependencies = [
     'pixelinkWrapper',
     'imageio',
     'uuid6',
+    'pywin32; sys_platform == "win32"',
     'h5py'
 ]
 
