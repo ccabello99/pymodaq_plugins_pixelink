@@ -59,7 +59,6 @@ class PixelinkCamera:
         self.model_name = info["Model Name"]
         self.device_info = info
         self.attributes = {}
-        self._msg_opener = None
 
         # Default directory for parameter config files
         self.base_dir = os.path.join(os.environ.get('PROGRAMDATA'), '.pymodaq')
@@ -340,7 +339,6 @@ class PixelinkCamera:
         if os.path.exists(config_path):
             return
         else:
-            self._msg_opener = DefaultConfigMsg()
             msg = QtWidgets.QMessageBox()
             msg.setIcon(QtWidgets.QMessageBox.Question)
             msg.setWindowTitle("Missing Config File")
@@ -424,27 +422,7 @@ class PixelinkCamera:
             self.safe_exec_messagebox(msg_info, buttons="ok")
 
     def safe_exec_messagebox(self, msgbox: QtWidgets.QMessageBox, buttons: str = "yesno") -> int:
-        """
-        Safe dialog call that avoids creating Qt modal dialogs from non-GUI threads.
-
-        Parameters
-        ----------
-        msgbox : QMessageBox
-            The prepared message box.
-        buttons : str
-            Either "yesno" or "ok". Controls native fallback type.
-        """
-        app = QtWidgets.QApplication.instance()
-        in_gui_thread = False
-        if app is not None:
-            in_gui_thread = QtCore.QThread.currentThread() == app.thread()
-
-        # GUI thread → Safe to show Qt dialog
-        if app is not None and in_gui_thread:
-            try:
-                return int(msgbox.exec_())
-            except Exception:
-                return int(QtWidgets.QMessageBox.No)
+        result_container = {}
 
         # Non-GUI thread (Windows only safe path)
         if sys.platform.startswith("win"):
@@ -472,10 +450,12 @@ class PixelinkCamera:
 
             except Exception:
                 return int(QtWidgets.QMessageBox.No)
+        # Linux path (just create new config; no pop-up window)
         else:
-            print("This plugin is not supported on non-Windows platforms.")
-
-        return int(QtWidgets.QMessageBox.No)
+            try:
+                return result_container.get("choice", int(QtWidgets.QMessageBox.Yes))
+            except Exception:               
+                return result_container.get("choice", int(QtWidgets.QMessageBox.No))
 
 class DefaultConfigMsg(QtCore.QObject):
     def __init__(self):
