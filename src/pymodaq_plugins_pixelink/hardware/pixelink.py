@@ -457,13 +457,6 @@ class PixelinkCamera:
             except Exception:               
                 return result_container.get("choice", int(QtWidgets.QMessageBox.No))
 
-class DefaultConfigMsg(QtCore.QObject):
-    def __init__(self):
-        super().__init__()
-    @QtCore.Slot(object)
-    def run_box(self, fn):
-        fn()
-
 class Listener:
 
     def __init__(self, **kwargs):
